@@ -24,7 +24,8 @@ BRANCH="${APCUPS_BRANCH:-main}"
 
 [ "$EUID" -eq 0 ] || { echo "Run as root: sudo $0" >&2; exit 1; }
 command -v apt-get >/dev/null || { echo "This installer targets Debian/Raspberry Pi OS (apt)." >&2; exit 1; }
-grep -qi 'raspberry pi' /proc/device-tree/model 2>/dev/null \
+PI_MODEL=$(tr -d '\0' </proc/device-tree/model 2>/dev/null || true)
+grep -qi 'raspberry pi' <<<"$PI_MODEL" \
     || echo "!! Warning: /proc/device-tree/model does not look like a Raspberry Pi"
 
 echo "============================================================"
@@ -229,11 +230,12 @@ EOF
     echo ">> config.txt hardening applied"
 fi
 
-if confirm "Apply Pi 4 mild overclock? (arm_freq=1750, over_voltage=2, gpu_freq=600)\n\nOnly affects Pi 4 hardware; Pi 5 ignores it."; then
-    if grep -q '# <<< apc-nmc' "$BOOTCFG"; then
-        sed -i '/# <<< apc-nmc/i [pi4]\nover_voltage=2\narm_freq=1750\ngpu_freq=600\ngpu_mem=16' "$BOOTCFG"
-    else
-        CFG_BLOCK <<'EOF'
+if [[ "$PI_MODEL" == *"Pi 4"* ]]; then
+    if confirm "Apply Pi 4 mild overclock? (arm_freq=1750, over_voltage=2, gpu_freq=600)"; then
+        if grep -q '# <<< apc-nmc' "$BOOTCFG"; then
+            sed -i '/# <<< apc-nmc/i [pi4]\nover_voltage=2\narm_freq=1750\ngpu_freq=600\ngpu_mem=16' "$BOOTCFG"
+        else
+            CFG_BLOCK <<'EOF'
 # >>> apc-nmc
 [pi4]
 over_voltage=2
@@ -242,8 +244,11 @@ gpu_freq=600
 gpu_mem=16
 # <<< apc-nmc
 EOF
+        fi
+        echo ">> Pi4 overclock block applied"
     fi
-    echo ">> Pi4 overclock block applied"
+else
+    echo ">> Skipping Pi 4 overclock option (detected: ${PI_MODEL:-unknown})"
 fi
 
 # kernel watchdog -> systemd ping + panic reboot (sysctl.d conf deployed above)
