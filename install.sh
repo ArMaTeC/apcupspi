@@ -88,6 +88,7 @@ put usr/local/bin/apc-nmc-web              # web UI assets (js/css)
 put usr/local/sbin/firstboot-wizard.sh  0755
 put usr/local/sbin/pi-system-backup.sh  0755
 put usr/local/sbin/net-watchdog.sh      0755
+put usr/local/sbin/nut-usb-detect.sh    0755
 
 # apc_modbus is not in Debian's nut package — it is built from the vendored
 # NUT 2.8.5 source (with the NUT libmodbus fork for USB support). Falls back
@@ -193,6 +194,9 @@ FINALDELAY 5
 EOF
 # NUT daemons run as the 'nut' user — they must be able to read these files
 chgrp -R nut /etc/nut
+
+# sync vendorid/productid with whatever UPS is attached right now
+/usr/local/sbin/nut-usb-detect.sh 2>/dev/null || true
 install -D -m 0640 /dev/stdin /etc/snmp/snmpd.conf <<'EOF'
 # Emulate an APC Network Management Card 2 (AP9631)
 # backed by apc-nmc-agent.py + NUT/upsd
