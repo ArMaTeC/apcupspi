@@ -97,6 +97,30 @@ put usr/local/sbin/pi-system-backup.sh  0755
 put usr/local/sbin/net-watchdog.sh      0755
 put usr/local/sbin/nut-usb-detect.sh    0755
 
+# Run a long build step quietly (full output -> $log) while showing a
+# spinner, elapsed time and the latest log line so builds don't look hung.
+_run_step() {
+    local label="$1" log="$2" pid rc=0 i=0 spin='|/-\' start=$SECONDS
+    shift 2
+    if [ -t 1 ]; then
+        "$@" >>"$log" 2>&1 & pid=$!
+        while kill -0 "$pid" 2>/dev/null; do
+            printf '\r   %s %-30s %4ds  %-56.56s' "${spin:i++%4:1}" \
+                "$label" $((SECONDS-start)) \
+                "$(tail -n1 "$log" 2>/dev/null | tr -d '\r')"
+            sleep 0.3
+        done
+        wait "$pid" || rc=$?
+        printf '\r   %-3s %-30s %4ds%57s\n' \
+            "$([ $rc -eq 0 ] && echo OK || echo FAIL)" \
+            "$label" $((SECONDS-start)) ""
+    else
+        "$@" >>"$log" 2>&1 || rc=$?
+        echo "   $label: $([ $rc -eq 0 ] && echo OK || echo FAIL)"
+    fi
+    return $rc
+}
+
 # apc_modbus is not in Debian's nut package — it is built from the vendored
 # NUT 2.8.5 source (with the NUT libmodbus fork for USB support). Falls back
 # to the shipped prebuilt binary + library if no source is present.
@@ -106,19 +130,22 @@ build_nut_driver() {
     echo ">> Building libmodbus (NUT fork, USB transport) from source..."
     tar -xzf "$SRC"/vendor/libmodbus-*.tar.gz -C "$work" || return 1
     (cd "$work"/libmodbus-* \
-        && ./configure --prefix=/usr/local >>"$work/build.log" 2>&1 \
-        && make -j"$J" >>"$work/build.log" 2>&1 \
-        && make install >>"$work/build.log" 2>&1) || {
+        && _run_step "libmodbus: configure" "$work/build.log" \
+            ./configure --prefix=/usr/local \
+        && _run_step "libmodbus: make -j$J" "$work/build.log" make -j"$J" \
+        && _run_step "libmodbus: make install" "$work/build.log" \
+            make install) || {
         echo "!! libmodbus build failed — see $work/build.log"; return 1; }
     ldconfig
     echo ">> Building apc_modbus from NUT 2.8.5 source (a few minutes)..."
     tar -xzf "$SRC"/vendor/nut-2.8.5-src.tar.gz -C "$work" || return 1
     (cd "$work"/nut-2.8.5 \
-        && ./configure --with-drivers=apc_modbus --with-modbus+usb=yes \
-            --with-doc=no --without-asciidoc --without-pkg-config \
-            >>"$work/build.log" 2>&1 \
-        && make -j"$J" >>"$work/build.log" 2>&1 \
-        && install -s -m 0755 drivers/apc_modbus /usr/lib/nut/) || {
+        && _run_step "NUT: configure" "$work/build.log" \
+            ./configure --with-drivers=apc_modbus --with-modbus+usb=yes \
+                --with-doc=no --without-asciidoc --without-pkg-config \
+        && _run_step "NUT: make -j$J" "$work/build.log" make -j"$J" \
+        && _run_step "NUT: install driver" "$work/build.log" \
+            install -s -m 0755 drivers/apc_modbus /usr/lib/nut/) || {
         echo "!! NUT build failed — see $work/build.log"; return 1; }
     echo ">> apc_modbus built and installed to /usr/lib/nut/"
     rm -rf "$work"
