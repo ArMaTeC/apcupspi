@@ -43,6 +43,20 @@ PY
 
 esc_sed() { printf '%s' "$1" | sed 's/[\&/|]/\\&/g'; }
 
+upsd_set_pw() { # $1=user $2=password — upsd.users is not strict INI (bare
+                # directives like "upsmon primary" break ConfigParser)
+    awk -v sec="[$1]" -v pw="$2" '
+        $0 == sec { insec=1; print; next }
+        /^\[/   { insec=0 }
+        insec && match($0, /^[[:space:]]*password[[:space:]]*=/) {
+            print substr($0, 1, RLENGTH) " " pw; found=1; next
+        }
+        { print }
+        END { if (!found) exit 1 }
+    ' "$UPSD_USERS" > "$UPSD_USERS.tmp" \
+      && mv "$UPSD_USERS.tmp" "$UPSD_USERS" && chmod 640 "$UPSD_USERS"
+}
+
 pw_pair() { # $1=prompt -> echoes confirmed password; Esc/Ctrl+C propagates
     while :; do
         p1=$(askpw "$1") || return 1
@@ -136,8 +150,8 @@ CUR_UPS=$(grep -oE '^\[[^]]+\]' "$UPS_CONF" | head -1 | tr -d '[]')
 [ -n "$CUR_UPS" ] && [ "$CUR_UPS" != "$UPS" ] && sed -i -E "0,/^\[$CUR_UPS\]/s//[$(esc_sed "$UPS")]/" "$UPS_CONF"
 sed -i -E "s|^([[:space:]]*driver[[:space:]]*=[[:space:]]*).*|\1$(esc_sed "$DRIVER")|" "$UPS_CONF"
 sed -i -E "s|^([[:space:]]*port[[:space:]]*=[[:space:]]*).*|\1$(esc_sed "$UPORT")|" "$UPS_CONF"
-ini_set "$UPSD_USERS" upsmon password "$NUTPW"
-ini_set "$UPSD_USERS" admin  password "$ADMPW"
+upsd_set_pw upsmon "$NUTPW" || echo "!! warning: could not set upsmon password in upsd.users" >&2
+upsd_set_pw admin  "$ADMPW" || echo "!! warning: could not set admin password in upsd.users" >&2
 sed -i -E "s|^MONITOR[[:space:]].*|$(esc_sed "MONITOR ${UPS}@localhost 1 upsmon ${NUTPW} primary")|" "$UPSMON_CONF"
 if [ -n "$CUR_UPS" ] && [ "$CUR_UPS" != "$UPS" ]; then
     systemctl disable "nut-driver@$CUR_UPS" 2>/dev/null || true

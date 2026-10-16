@@ -132,7 +132,7 @@ put etc/systemd/system/ssh.service.d 2>/dev/null || true
 install -D -m 0640 /dev/stdin /etc/nut/upsd.users <<'EOF'
 [upsmon]
     password = CHANGE_ME
-    upsmon master
+    upsmon primary
     actions = SET
     instcmds = ALL
 [admin]
