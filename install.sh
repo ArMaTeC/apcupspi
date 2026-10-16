@@ -50,6 +50,7 @@ infocmp "$TERM" >/dev/null 2>&1 || export TERM=xterm
 # Always take input from the controlling terminal instead.
 W() { /usr/bin/whiptail "$@" </dev/tty; }
 confirm() { W --yesno "$1" 10 68; }
+trap 'printf "\nInstall aborted.\n" >&2; exit 130' INT TERM
 
 # ------------------------------------------------------- payload resolution
 SRC=""

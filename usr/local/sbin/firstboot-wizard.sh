@@ -12,6 +12,9 @@ infocmp "$TERM" >/dev/null 2>&1 || export TERM=xterm
 # Always take input from the controlling terminal — safe under `curl | bash`
 # where stdin is the pipe.
 W() { /usr/bin/whiptail "$@" </dev/tty; }
+
+die() { printf '\nWizard aborted.\n' >&2; exit 130; }
+trap 'die' INT TERM
 NMC_CONF=/etc/apc-nmc/nmc.conf
 NMC_DIR=/etc/apc-nmc
 UPS_CONF=/etc/nut/ups.conf
@@ -40,45 +43,46 @@ PY
 
 esc_sed() { printf '%s' "$1" | sed 's/[\&/|]/\\&/g'; }
 
-pw_pair() { # $1=prompt -> echoes confirmed password
+pw_pair() { # $1=prompt -> echoes confirmed password; Esc/Ctrl+C propagates
     while :; do
-        p1=$(askpw "$1"); p2=$(askpw "Confirm: $1")
-        if [ -z "$p1" ]; then W --msgbox "Password cannot be empty." 8 50; continue; fi
+        p1=$(askpw "$1") || return 1
+        p2=$(askpw "Confirm: $1") || return 1
+        if [ -z "$p1" ]; then W --msgbox "Password cannot be empty." 8 50 || return 1; continue; fi
         [ "$p1" = "$p2" ] && { echo "$p1"; return; }
-        W --msgbox "Passwords do not match, try again." 8 50
+        W --msgbox "Passwords do not match, try again." 8 50 || return 1
     done
 }
 
 # ------------------------------------------------------------------ collect
-W --msgbox "Welcome!\n\nThis is the first boot of this image. The wizard will now ask you to configure:\n\n  - hostname and credentials\n  - network\n  - UPS monitoring (NUT) and web interface\n  - SNMP\n\nPress OK to begin." 18 70
+W --msgbox "Welcome!\n\nThis is the first boot of this image. The wizard will now ask you to configure:\n\n  - hostname and credentials\n  - network\n  - UPS monitoring (NUT) and web interface\n  - SNMP\n\nPress OK to begin. Esc or Ctrl+C exits at any prompt." 18 70 || die
 
-HN=$(ask "Hostname for this device:" "apc-nmc"); HN=${HN:-apc-nmc}
-ROOTPW=$(pw_pair "New root password (used for console + SSH):")
-SSHKEY=$(ask "SSH public key to authorize for root (ssh-ed25519/ssh-rsa/...).\nLeave empty to use password login only:" "")
+HN=$(ask "Hostname for this device:" "apc-nmc") || die; HN=${HN:-apc-nmc}
+ROOTPW=$(pw_pair "New root password (used for console + SSH):") || die
+SSHKEY=$(ask "SSH public key to authorize for root (ssh-ed25519/ssh-rsa/...).\nLeave empty to use password login only:" "") || die
 NET=$(W --menu "Network configuration for eth0:" 12 70 2 \
     "dhcp"   "Automatic (DHCP) - recommended" \
     "static" "Static IP address" 3>&1 1>&2 2>&3 || echo dhcp)
 CIDR=""; GW=""; DNS=""
 if [ "$NET" = "static" ]; then
-    CIDR=$(ask "Static address in CIDR notation (e.g. 192.168.1.50/24):" "")
-    GW=$(ask "Default gateway (e.g. 192.168.1.1):" "")
-    DNS=$(ask "DNS server(s), space separated (e.g. 192.168.1.1 1.1.1.1):" "")
+    CIDR=$(ask "Static address in CIDR notation (e.g. 192.168.1.50/24):" "") || die
+    GW=$(ask "Default gateway (e.g. 192.168.1.1):" "") || die
+    DNS=$(ask "DNS server(s), space separated (e.g. 192.168.1.1 1.1.1.1):" "") || die
 fi
 
-WEBUSER=$(ask "Web interface admin username:" "apc"); WEBUSER=${WEBUSER:-apc}
-WEBPW=$(pw_pair "Web interface admin password:")
+WEBUSER=$(ask "Web interface admin username:" "apc") || die; WEBUSER=${WEBUSER:-apc}
+WEBPW=$(pw_pair "Web interface admin password:") || die
 
-UPS=$(ask "UPS name in NUT (must match the [section] in ups.conf):" "myups"); UPS=${UPS:-myups}
-DRIVER=$(ask "NUT driver for your UPS (e.g. usbhid-ups, apc_modbus, blazer_usb):" "apc_modbus"); DRIVER=${DRIVER:-apc_modbus}
-UPORT=$(ask "NUT port (e.g. auto, /dev/ttyS0, /dev/usb/hiddev0):" "auto"); UPORT=${UPORT:-auto}
-NUTPW=$(pw_pair "NUT monitor password (used by upsmon + web interface):")
-ADMPW=$(askpw "NUT admin password (leave empty = same as monitor password):")
+UPS=$(ask "UPS name in NUT (must match the [section] in ups.conf):" "myups") || die; UPS=${UPS:-myups}
+DRIVER=$(ask "NUT driver for your UPS (e.g. usbhid-ups, apc_modbus, blazer_usb):" "apc_modbus") || die; DRIVER=${DRIVER:-apc_modbus}
+UPORT=$(ask "NUT port (e.g. auto, /dev/ttyS0, /dev/usb/hiddev0):" "auto") || die; UPORT=${UPORT:-auto}
+NUTPW=$(pw_pair "NUT monitor password (used by upsmon + web interface):") || die
+ADMPW=$(askpw "NUT admin password (leave empty = same as monitor password):") || die
 [ -z "$ADMPW" ] && ADMPW="$NUTPW"
 
-ROCOM=$(ask "SNMP read community (v1/v2c):" "public"); ROCOM=${ROCOM:-public}
-RWCOM=$(ask "SNMP write community (v1/v2c):" "private"); RWCOM=${RWCOM:-private}
-LOC=$(ask "Device location (shown in web UI + SNMP):" "Server Room"); LOC=${LOC:-Server Room}
-CONTACT=$(ask "Device contact (shown in web UI + SNMP):" "admin@localhost"); CONTACT=${CONTACT:-admin@localhost}
+ROCOM=$(ask "SNMP read community (v1/v2c):" "public") || die; ROCOM=${ROCOM:-public}
+RWCOM=$(ask "SNMP write community (v1/v2c):" "private") || die; RWCOM=${RWCOM:-private}
+LOC=$(ask "Device location (shown in web UI + SNMP):" "Server Room") || die; LOC=${LOC:-Server Room}
+CONTACT=$(ask "Device contact (shown in web UI + SNMP):" "admin@localhost") || die; CONTACT=${CONTACT:-admin@localhost}
 
 W --yesno "Generate a fresh self-signed HTTPS certificate for the web interface?\n(Recommended: the image ships a placeholder cert.)" 10 70 && REGEN_CERT=1 || REGEN_CERT=0
 
