@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD033 MD041 MD036 -->
 <div align="center">
 
-# 🔌 apcupspi
+# 🔌 APC-UPS-PI
 
 <!-- markdownlint-disable-next-line MD001 -->
 ### Turn a Raspberry Pi into an APC Network Management Card
@@ -27,7 +27,7 @@ management card presence — for the price of a Pi.*
 
 ## ⚡ What is this?
 
-`apcupspi` transforms a fresh Raspberry Pi OS install into a complete
+`APC-UPS-PI` transforms a fresh Raspberry Pi OS install into a complete
 **emulated APC Network Management Card** — the kind of management interface
 you'd normally need an expensive AP9631 card for:
 
