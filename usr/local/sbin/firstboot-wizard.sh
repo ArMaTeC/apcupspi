@@ -7,6 +7,9 @@
 #
 set -u
 W=/usr/bin/whiptail
+# newt breaks on unknown TERM types — fall back to xterm.
+export TERM="${TERM:-xterm}"
+infocmp "$TERM" >/dev/null 2>&1 || export TERM=xterm
 NMC_CONF=/etc/apc-nmc/nmc.conf
 NMC_DIR=/etc/apc-nmc
 UPS_CONF=/etc/nut/ups.conf

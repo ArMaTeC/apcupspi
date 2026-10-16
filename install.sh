@@ -42,6 +42,10 @@ apt-get install -y -qq \
     network-manager avahi-daemon python3
 
 W=/usr/bin/whiptail
+# newt breaks on unknown TERM types (PuTTY variants, serial) — keys leak
+# as raw escapes like ^[[C. Fall back to xterm when TERM is unusable.
+export TERM="${TERM:-xterm}"
+infocmp "$TERM" >/dev/null 2>&1 || export TERM=xterm
 confirm() { $W --yesno "$1" 10 68; }
 
 # ------------------------------------------------------- payload resolution
