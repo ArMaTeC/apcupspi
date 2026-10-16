@@ -67,18 +67,43 @@ flowchart LR
 
 <div align="center">
 
-<img src="docs/img/home.png" width="88%" alt="Home dashboard — battery, runtime, state, recent events">
+<img src="docs/img/home.png" width="88%" alt="Home dashboard — battery, runtime, load, state, recent events">
 
-*Home — live battery, runtime, state and the rolling event log*
+*Home — live charge, runtime, load, input/output and the rolling event log*
+
+<img src="docs/img/data-log.png" width="88%" alt="Data Log — energy stats, power-quality trend, samples">
+
+*Data Log — energy usage, power-quality trend and per-minute samples*
 
 <img src="docs/img/config.png" width="88%" alt="Configuration — thresholds, notifications, sessions, backup">
 
 *Configuration — thresholds, the full alert-channel setup with per-trigger
 routing, sessions and backup/restore*
 
-<img src="docs/img/login.png" width="60%" alt="Log On — NMC2-style login">
+<img src="docs/img/login.png" width="55%" alt="Log On — NMC2-style login">
 
 </div>
+
+<details>
+<summary><b>Every page</b> — click to expand the full tour</summary>
+
+<div align="center">
+
+| | |
+| --- | --- |
+| ![UPS Status](docs/img/ups-status.png) | ![Diagnostics](docs/img/diagnostics.png) |
+| *Status — battery, input, output, timers* | *Tests — self-test & runtime calibration* |
+| ![UPS Control](docs/img/ups-control.png) | ![Outlet Groups](docs/img/outlet-groups.png) |
+| *Control — safe shutdown / PCNS signaling* | *Outlet groups — per-group power control* |
+| ![Event Log](docs/img/event-log.png) | ![System](docs/img/about-system.png) |
+| *Event log — severity-filtered history* | *About — NMC identity & attached UPS* |
+| ![Network](docs/img/about-network.png) | ![Host](docs/img/about-host.png) |
+| *Network — addressing, DNS, NTP* | *Host — Pi SoC temp, memory, services* |
+| ![UPS Variables](docs/img/ups-variables.png) | |
+| *Raw NUT variables behind every page* | |
+
+</div>
+</details>
 
 ## 🚀 Install
 
