@@ -6,10 +6,12 @@
 # Can also be re-run manually: sudo firstboot-wizard.sh
 #
 set -u
-W=/usr/bin/whiptail
 # newt breaks on unknown TERM types — fall back to xterm.
 export TERM="${TERM:-xterm}"
 infocmp "$TERM" >/dev/null 2>&1 || export TERM=xterm
+# Always take input from the controlling terminal — safe under `curl | bash`
+# where stdin is the pipe.
+W() { /usr/bin/whiptail "$@" </dev/tty; }
 NMC_CONF=/etc/apc-nmc/nmc.conf
 NMC_DIR=/etc/apc-nmc
 UPS_CONF=/etc/nut/ups.conf
