@@ -25,6 +25,14 @@ SNMP_CONF=/etc/snmp/snmpd.conf
 say()  { W --msgbox "$1" 12 70; }
 ask()  { W --inputbox "$1" 10 70 "$2" 3>&1 1>&2 2>&3; }
 askpw(){ W --passwordbox "$1" 10 70 3>&1 1>&2 2>&3; }
+# yes/no has no Cancel button — Esc is the way out; it must abort, not
+# silently mean "no".
+yesno() { # $1=text $2=height (optional)
+    W --yesno "$1\n\n(Esc = abort wizard)" "${2:-13}" 70
+    local rc=$?
+    [ $rc -eq 255 ] && die
+    return $rc
+}
 
 ini_set() { # file section key value — write an ini key via python3
     python3 - "$1" "$2" "$3" "$4" <<'PY'
@@ -76,7 +84,7 @@ ROOTPW=$(pw_pair "New root password (used for console + SSH):") || die
 SSHKEY=$(ask "SSH public key to authorize for root (ssh-ed25519/ssh-rsa/...).\nLeave empty to use password login only:" "") || die
 NET=$(W --menu "Network configuration for eth0:" 12 70 2 \
     "dhcp"   "Automatic (DHCP) - recommended" \
-    "static" "Static IP address" 3>&1 1>&2 2>&3 || echo dhcp)
+    "static" "Static IP address" 3>&1 1>&2 2>&3) || die
 CIDR=""; GW=""; DNS=""
 if [ "$NET" = "static" ]; then
     CIDR=$(ask "Static address in CIDR notation (e.g. 192.168.1.50/24):" "") || die
@@ -99,7 +107,7 @@ RWCOM=$(ask "SNMP write community (v1/v2c):" "private") || die; RWCOM=${RWCOM:-p
 LOC=$(ask "Device location (shown in web UI + SNMP):" "Server Room") || die; LOC=${LOC:-Server Room}
 CONTACT=$(ask "Device contact (shown in web UI + SNMP):" "admin@localhost") || die; CONTACT=${CONTACT:-admin@localhost}
 
-W --yesno "Generate a fresh self-signed HTTPS certificate for the web interface?\n(Recommended: the image ships a placeholder cert.)" 10 70 && REGEN_CERT=1 || REGEN_CERT=0
+yesno "Generate a fresh self-signed HTTPS certificate for the web interface?\n(Recommended: the image ships a placeholder cert.)" && REGEN_CERT=1 || REGEN_CERT=0
 
 SUMMARY="Hostname:      $HN
 Root password: (set)
@@ -112,7 +120,7 @@ Location:      $LOC / $CONTACT
 New TLS cert:  $([ $REGEN_CERT -eq 1 ] && echo yes || echo no)
 
 Apply this configuration?"
-W --yesno "$SUMMARY" 22 70 || { say "Cancelled. The wizard will run again on next boot,\nor re-run: sudo firstboot-wizard.sh"; exit 0; }
+yesno "$SUMMARY" 24 || { say "Cancelled. The wizard will run again on next boot,\nor re-run: sudo firstboot-wizard.sh"; exit 0; }
 
 # -------------------------------------------------------------------- apply
 echo ">> Applying configuration..."
@@ -184,4 +192,4 @@ for s in "nut-driver@$UPS" nut-server nut-monitor snmpd apc-nmc-web; do
 done
 
 say "Configuration applied!\n\nWeb interface:  https://$HN  (or this device's IP)\nUPS monitoring: nut-server on port 3493\nSNMP:           port 161\n\nYou can re-run this wizard anytime: sudo firstboot-wizard.sh"
-W --yesno "Reboot now to apply everything cleanly?" 8 60 && reboot || true
+yesno "Reboot now to apply everything cleanly?" && reboot || true

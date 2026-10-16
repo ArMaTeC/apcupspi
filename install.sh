@@ -52,8 +52,15 @@ infocmp "$TERM" >/dev/null 2>&1 || export TERM=xterm
 # When run as `curl | bash`, stdin is the pipe — whiptail can't read keys.
 # Always take input from the controlling terminal instead.
 W() { /usr/bin/whiptail "$@" </dev/tty; }
-confirm() { W --yesno "$1" 10 68; }
-trap 'printf "\nInstall aborted.\n" >&2; exit 130' INT TERM
+aborted() { printf '\nInstall aborted.\n' >&2; exit 130; }
+trap 'aborted' INT TERM
+# yes/no prompts: Yes skips nothing (No = skip feature); Esc = abort install.
+confirm() {
+    W --yesno "$1\n\n(Esc = abort install)" 13 68
+    local rc=$?
+    [ $rc -eq 255 ] && aborted
+    return $rc
+}
 
 # ------------------------------------------------------- payload resolution
 SRC=""
