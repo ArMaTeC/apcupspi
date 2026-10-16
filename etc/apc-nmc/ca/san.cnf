@@ -1,0 +1,4 @@
+subjectAltName=DNS:APCUPS,DNS:apcups,DNS:apcups.local,DNS:localhost,IP:192.168.1.52,IP:127.0.0.1,IP:0:0:0:0:0:0:0:1
+basicConstraints=CA:FALSE
+keyUsage=digitalSignature,keyEncipherment
+extendedKeyUsage=serverAuth

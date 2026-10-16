@@ -1,0 +1,51 @@
+# APC NMC emulation settings
+[upsd]
+host = 127.0.0.1
+port = 3493
+ups = myups
+user = upsmon
+password = CHANGEME
+
+[device]
+# values the UPS does not report over USB HID - edit to match reality
+ups_name = APC Smart-UPS
+va_rating = 1000
+rated_output_voltage = 230
+high_transfer_volt = 253
+low_transfer_volt = 207
+nominal_input_voltage = 230
+nominal_frequency = 50
+battery_replace_date = 01/10/16
+# electricity cost for the Energy card (0 = hide cost estimate)
+energy_rate = 0.30
+energy_currency = €
+nmc_name = apc-nmc
+nmc_serial = 5A2436E12345
+nmc_fw = v7.1.2
+location = Server Room
+contact = admin@localhost
+
+[snmp]
+# PowerNet-MIB trap destinations (OPP-005). One or more host[:port],
+# comma-separated. Empty = no traps sent.
+trapsink =
+trapcommunity = public
+
+[notify]
+# Outbound event notifications (OPP-008). warn+crit events are forwarded.
+# syslog: "local" = journald /dev/log; host[:port] = UDP syslog (default 514).
+syslog = local
+webhook =
+min_sev = warn
+# hook: optional script run on every UPS event; called as
+#   hook <flag> <on|off> "<status-string>"  (empty = disabled)
+hook =
+
+# Optional extra web logins: name = password (D4 multi-user)
+# [users]
+# readonly = examplepass
+
+[schedule]
+# weekly self-test: weekday 0-6 (Mon-Sun) + hour 0-23; empty = disabled
+selftest_weekday =
+selftest_hour =

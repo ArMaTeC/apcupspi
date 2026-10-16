@@ -1,0 +1,12 @@
+[Unit]
+Description=APC NMC emulation web interface
+After=network-online.target nut-server.service
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/bin/python3 /usr/local/bin/apc-nmc-web.py
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
