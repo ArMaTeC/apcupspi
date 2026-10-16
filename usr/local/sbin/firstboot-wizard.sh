@@ -116,7 +116,9 @@ with open(path + ".lock", "a") as lf:
             st = {}
     except Exception:
         st = {}
-    st.setdefault("cfg", {})[key] = val
+    if not isinstance(st.get("cfg"), dict):
+        st["cfg"] = {}
+    st["cfg"][key] = val
     tmp = path + ".tmp"
     with open(tmp, "w") as f:
         json.dump(st, f)

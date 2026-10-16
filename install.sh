@@ -41,7 +41,7 @@ apt-get install -y \
     nut nut-server nut-client \
     snmpd snmp \
     whiptail openssl rsync parted dosfstools cloud-guest-utils \
-    curl ca-certificates iputils-ping git \
+    curl ca-certificates iputils-ping git ethtool \
     network-manager avahi-daemon python3 \
     build-essential libusb-1.0-0-dev
 
@@ -275,7 +275,11 @@ EOF
 chmod 640 /etc/apc-nmc/nmc.conf 2>/dev/null || true
 
 # self-signed HTTPS cert (wizard can regenerate with the real hostname)
-mkdir -p /var/lib/apc-nmc
+# The SNMP agent runs as Debian-snmp and writes state/events/agent.log here;
+# the setgid bit keeps new files in its group so root-created lock files
+# stay writable by the agent.
+install -d -o Debian-snmp -g Debian-snmp -m 2750 /var/lib/apc-nmc 2>/dev/null \
+    || mkdir -p /var/lib/apc-nmc
 if [ ! -s /etc/apc-nmc/nmc.key ]; then
     echo ">> Generating self-signed TLS certificate..."
     openssl req -x509 -newkey rsa:2048 -nodes \

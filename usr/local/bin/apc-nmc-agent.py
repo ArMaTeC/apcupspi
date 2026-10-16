@@ -289,6 +289,8 @@ class Nut:
         return r
 
     def set_var(self, ups, var, value):
+        if re.search(r'["\r\n]', value):
+            return "ERR INVALID-VALUE"
         self._auth()
         return self._req('SET VAR %s %s "%s"' % (ups, var, value))
 
@@ -1133,7 +1135,9 @@ def parse_oid(line):
 
 def fmt_val(typ, val):
     if typ in (S, P):
-        return str(val)
+        # pass_persist replies are line-oriented: a control char in a
+        # NUT string would corrupt the protocol stream for snmpd.
+        return re.sub(r"[\x00-\x1f\x7f]", " ", str(val))
     try:
         n = int(val)
     except Exception:

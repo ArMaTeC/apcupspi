@@ -12,12 +12,22 @@ log() { logger -t "$TAG" -- "$*"; }
 GW="$(ip -4 route show default scope global | awk 'NR==1{print $3}')"
 GW="${GW:-192.168.1.1}"
 
-# Discover the wlan0 NetworkManager connection dynamically (fallbacks below
-# also try a bare `nmcli device connect` so this stays usable without one).
+# Discover the NetworkManager connections dynamically (fallbacks below also
+# try a bare `nmcli device connect` so this stays usable without one).
+ETH_CON="$(nmcli -t -f NAME,DEVICE con show --active 2>/dev/null | awk -F: '$2=="eth0"{print $1;exit}')"
+[ -n "$ETH_CON" ] || ETH_CON="$(nmcli -t -f NAME,TYPE con show 2>/dev/null | awk -F: '$2 ~ /ethernet|802-3/{print $1;exit}')"
 WLAN_CON="$(nmcli -t -f NAME,DEVICE con show --active 2>/dev/null | awk -F: '$2=="wlan0"{print $1;exit}')"
 [ -n "$WLAN_CON" ] || WLAN_CON="$(nmcli -t -f NAME,TYPE con show 2>/dev/null | awk -F: '$2 ~ /wifi|wireless/{print $1;exit}')"
 
-ping_ok() { ping -I "$1" -c 2 -W 3 -q "$GW" >/dev/null 2>&1; }
+# Ping the interface's OWN default gateway: with eth0+wlan0 on different
+# subnets, the first global default GW may be unreachable via the other
+# interface even though that link is healthy (false failure -> bounce).
+gw_for() { ip -4 route show default dev "$1" scope global 2>/dev/null | awk 'NR==1{print $3;exit}'; }
+
+ping_ok() {
+    PING_GW="$(gw_for "$1")"; PING_GW="${PING_GW:-$GW}"
+    ping -I "$1" -c 2 -W 3 -q "$PING_GW" >/dev/null 2>&1
+}
 
 iface_has_ip() { ip -4 addr show dev "$1" 2>/dev/null | grep -q "inet "; }
 
@@ -30,30 +40,24 @@ recover_iface() {
     ping_ok "$ifname"
 }
 
-total_dead=0
-
-if ping_ok eth0; then
-    rm -f "$STATE_DIR/eth0.fail"
-else
-    log "eth0: cannot reach gateway $GW - recovering"
-    if recover_iface eth0 netplan-eth0; then
+if ! ping_ok eth0; then
+    log "eth0: cannot reach gateway $PING_GW - recovering"
+    if recover_iface eth0 "${ETH_CON:-eth0}"; then
         log "eth0: recovered after connection bounce"
-        rm -f "$STATE_DIR/eth0.fail"
     else
         log "eth0: still unreachable after bounce"
-        total_dead=1
     fi
 fi
 
 # wlan0: only manage it if wifi is enabled and it is meant to be up
 if [ "$(nmcli -t -f WIFI radio)" = "enabled" ]; then
     if ping_ok wlan0; then
-        rm -f "$STATE_DIR/wlan0.fail" "$STATE_DIR/wlan0.reloaded"
+        rm -f "$STATE_DIR/wlan0.reloaded"
     else
-        log "wlan0: cannot reach gateway $GW - bouncing connection"
+        log "wlan0: cannot reach gateway $PING_GW - bouncing connection"
         if recover_iface wlan0 "${WLAN_CON:-wlan0}"; then
             log "wlan0: recovered after connection bounce"
-            rm -f "$STATE_DIR/wlan0.fail" "$STATE_DIR/wlan0.reloaded"
+            rm -f "$STATE_DIR/wlan0.reloaded"
         elif [ ! -f "$STATE_DIR/wlan0.reloaded" ]; then
             # brcmfmac firmware wedge (RXHEADER -110) looks connected but passes no
             # traffic; only a module reload (or reboot) clears it.
@@ -69,13 +73,11 @@ if [ "$(nmcli -t -f WIFI radio)" = "enabled" ]; then
             sleep 5
             if ping_ok wlan0; then
                 log "wlan0: recovered after brcmfmac reload"
-                rm -f "$STATE_DIR/wlan0.fail"
             else
                 log "wlan0: still unreachable after brcmfmac reload"
             fi
         else
             log "wlan0: still unreachable (brcmfmac already reloaded this boot)"
-            [ "$total_dead" = "1" ] || touch "$STATE_DIR/wlan0.fail"
         fi
     fi
 fi
