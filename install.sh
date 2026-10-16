@@ -91,6 +91,11 @@ put usr/local/sbin/net-watchdog.sh      0755
 # apc_modbus is not in Debian's nut package — it was built locally.
 if [ -f "$SRC/usr/lib/nut/apc_modbus" ]; then
     put usr/lib/nut/apc_modbus 0755
+    # the binary was built with custom paths — bridge them to the Debian layout:
+    #   sysconfdir=/usr/local/ups/etc  and  statepath=/var/state/ups
+    mkdir -p /usr/local/ups /var/state
+    ln -sfn /etc/nut /usr/local/ups/etc
+    ln -sfn /run/nut /var/state/ups
 else
     echo "!! usr/lib/nut/apc_modbus not in payload — the apc_modbus driver"
     echo "   must be copied from a working system or built from nut>=2.8.1 source."
