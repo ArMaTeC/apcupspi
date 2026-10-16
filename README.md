@@ -43,8 +43,8 @@ configs.
 | 📡 **SNMP Agent** | Port `161` — APC PowerNet-MIB (`.1.3.6.1.4.1.318`) via `pass_persist`; v1/v2c communities + v3 read-only user |
 | 🔋 **NUT Backend** | `upsd` on `3493` + `upsmon` shutdown controller; `apc_modbus` **built from vendored NUT 2.8.5 source** on the target (prebuilt binary as fallback) |
 | 🛡️ **Resilience** | Kernel watchdog + `RuntimeWatchdogSec`, panic-reboot sysctl, per-service OOM tuning, `net-watchdog` connectivity recovery |
-| 💾 **Imaging Tool** | `pi-system-backup.sh` — flashable `.img` of the running system; `--clean` strips secrets for a publishable image |
-| 🧙 **Setup Wizard** | Interactive first-boot wizard (hostname, credentials, network, UPS, SNMP, certs) — re-runnable anytime |
+| 🔔 **Alerts** | UPS events pushed to Discord, Teams, HTTP webhook, email (SMTP) or syslog — per-event routing + severity filter |
+| 🧙 **Setup Wizard** | Interactive first-boot wizard (hostname, credentials, network, UPS, SNMP, alerts, certs) — re-runnable anytime |
 
 ## 📸 Screenshots
 
@@ -77,7 +77,7 @@ curl -fsSL https://github.com/ArMaTeC/apcupspi/archive/refs/heads/main.tar.gz | 
 
 ## 🧙 Configuration wizard
 
-Runs at the end of the install — and on first boot of clean images — via
+Runs at the end of the install, and can be re-run any time via
 `sudo firstboot-wizard.sh`. It collects:
 
 - 🏷️ Hostname + new root password
@@ -86,6 +86,7 @@ Runs at the end of the install — and on first boot of clean images — via
 - 🔐 Web-interface admin credentials
 - 🔋 UPS name, NUT driver & port, NUT monitor/admin passwords
 - 📡 SNMP communities, device location & contact
+- 🔔 Alert channels — Discord / Teams / generic webhook, email (SMTP), syslog + minimum severity (optional)
 - 🔒 Fresh self-signed HTTPS certificate (auto-generated)
 
 ## 🔌 Ports & services
@@ -106,16 +107,24 @@ Runs at the end of the install — and on first boot of clean images — via
 | `/var/swap` | Creates a dedicated 10G swapfile |
 | Argon One | Fan/button daemon + i2c, if you run the Argon One case |
 
-## 💾 Backup & imaging
+## 🔔 Alerts
 
-```bash
-sudo pi-system-backup.sh           # full clone image  -> /root/pi4-backup-*.img.gz
-sudo pi-system-backup.sh --clean   # publishable image -> secrets stripped,
-                                   #                     first-boot wizard enabled
-```
+UPS events — power loss/restore, low battery, overload, comms loss,
+self-test results, alarms — can be pushed to **Discord**, **Teams**, any
+**HTTP webhook**, **email (SMTP)** or **syslog**. Configure channels in the
+wizard or in the web UI (*Configuration → Notifications*): per-channel test
+buttons, a minimum-severity filter and per-event-type routing. Criticals
+can ping a Discord mention.
 
-Flash the `.img.gz` straight to a new SSD/SD with Raspberry Pi Imager or
-`dd` — it boots as your system (or as a clean wizard-driven install).
+## 🧩 API & integration
+
+JSON endpoints on the management UI (behind the web login):
+
+- `GET /api/v1/vars` — live UPS variables (status, load, battery…)
+- `GET /api/v1/commands` — instant commands the UPS exposes
+- `GET /datalog.json` — logged power-quality samples
+- `GET /config/backup` — download `apc-nmc-config.tgz` (config + state + events)
+- `POST /config/restore` — restore a saved config bundle
 
 ## 📁 Repo layout
 
@@ -124,7 +133,7 @@ The repo mirrors filesystem layout — files land exactly where they sit:
 ```text
 install.sh                  installer (payload = this repo)
 ├── usr/local/bin/          apc-nmc-web.py · apc-nmc-agent.py · web UI assets
-├── usr/local/sbin/         firstboot-wizard.sh · pi-system-backup.sh · net-watchdog.sh
+├── usr/local/sbin/         firstboot-wizard.sh · net-watchdog.sh · nut-usb-detect.sh
 ├── usr/lib/nut/apc_modbus  fallback prebuilt NUT driver (arm64)
 ├── usr/local/lib/          fallback libmodbus.so.5 (runtime dep of apc_modbus)
 ├── vendor/                 NUT 2.8.5 + NUT libmodbus fork sources (built on target)

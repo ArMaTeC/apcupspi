@@ -93,7 +93,6 @@ put usr/local/bin/apc-nmc-web.py   0755
 put usr/local/bin/apc-nmc-agent.py 0755
 put usr/local/bin/apc-nmc-web              # web UI assets (js/css)
 put usr/local/sbin/firstboot-wizard.sh  0755
-put usr/local/sbin/pi-system-backup.sh  0755
 put usr/local/sbin/net-watchdog.sh      0755
 put usr/local/sbin/nut-usb-detect.sh    0755
 

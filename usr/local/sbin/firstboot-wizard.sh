@@ -21,6 +21,7 @@ UPS_CONF=/etc/nut/ups.conf
 UPSD_USERS=/etc/nut/upsd.users
 UPSMON_CONF=/etc/nut/upsmon.conf
 SNMP_CONF=/etc/snmp/snmpd.conf
+STATE_FILE=/var/lib/apc-nmc/state.json
 
 say()  { W --msgbox "$1" 12 70; }
 ask()  { W --inputbox "$1" 10 70 "$2" 3>&1 1>&2 2>&3; }
@@ -76,8 +77,57 @@ pw_pair() { # $1=prompt -> echoes confirmed password; Esc/Ctrl+C propagates
     done
 }
 
+ask_req() { # $1=prompt $2=default — non-empty answer
+    local v
+    while :; do
+        v=$(ask "$1" "$2") || return 1
+        [ -n "$v" ] && { echo "$v"; return; }
+        W --msgbox "This field is required." 8 45 || return 1
+    done
+}
+
+ask_url() { # $1=prompt — non-empty http(s):// URL (matches the web UI's rule)
+    local u
+    while :; do
+        u=$(ask "$1" "") || return 1
+        case "$u" in http://*|https://*) echo "$u"; return;; esac
+        W --msgbox "Enter a URL starting with http:// or https://" 8 55 \
+            || return 1
+    done
+}
+
+state_set() { # key value — write cfg.<key> into state.json with the same
+              # lock + permissions the web app uses
+    python3 - "$STATE_FILE" "$1" "$2" <<'PY'
+import fcntl, grp, json, os, sys
+path, key, val = sys.argv[1:4]
+os.makedirs(os.path.dirname(path), exist_ok=True)
+with open(path + ".lock", "a") as lf:
+    try:
+        os.chown(lf.name, -1, grp.getgrnam("Debian-snmp").gr_gid)
+        os.chmod(lf.name, 0o660)
+    except Exception:
+        pass
+    fcntl.flock(lf, fcntl.LOCK_EX)
+    try:
+        with open(path) as f:
+            st = json.load(f)
+        if not isinstance(st, dict):
+            st = {}
+    except Exception:
+        st = {}
+    st.setdefault("cfg", {})[key] = val
+    tmp = path + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(st, f)
+    os.chmod(tmp, 0o640)
+    os.replace(tmp, path)
+    fcntl.flock(lf, fcntl.LOCK_UN)
+PY
+}
+
 # ------------------------------------------------------------------ collect
-W --msgbox "Welcome!\n\nThis is the first boot of this image. The wizard will now ask you to configure:\n\n  - hostname and credentials\n  - network\n  - UPS monitoring (NUT) and web interface\n  - SNMP\n\nPress OK to begin. Esc or Ctrl+C exits at any prompt." 18 70 || die
+W --msgbox "Welcome!\n\nThis is the first boot of this image. The wizard will now ask you to configure:\n\n  - hostname and credentials\n  - network\n  - UPS monitoring (NUT) and web interface\n  - SNMP\n  - alert notifications (optional)\n\nPress OK to begin. Esc or Ctrl+C exits at any prompt." 19 70 || die
 
 HN=$(ask "Hostname for this device:" "apc-nmc") || die; HN=${HN:-apc-nmc}
 ROOTPW=$(pw_pair "New root password (used for console + SSH):") || die
@@ -107,6 +157,70 @@ RWCOM=$(ask "SNMP write community (v1/v2c):" "private") || die; RWCOM=${RWCOM:-p
 LOC=$(ask "Device location (shown in web UI + SNMP):" "Server Room") || die; LOC=${LOC:-Server Room}
 CONTACT=$(ask "Device contact (shown in web UI + SNMP):" "admin@localhost") || die; CONTACT=${CONTACT:-admin@localhost}
 
+# --- alert notifications (optional; the per-event routing matrix stays
+# --- in the web UI — every selected channel gets all enabled severities)
+NOTIFY=0; NCH=""; NMIN=warn
+DURL=""; DMEN=""; TURL=""; WURL=""; SLOG=""
+SMTP_HOST=""; SMTP_PORT=""; SMTP_TLS=""; SMTP_USER=""; SMTP_PASS=""; SMTP_FROM=""; SMTP_TO=""
+if yesno "Configure alert notifications now?\n\nThe card can push UPS alerts (power loss, low battery,\ncomms loss, self-test results...) to external channels.\nThis can also be done later in the web UI\n(Configuration -> Notifications)."; then
+    NCH=$(W --separate-output --checklist \
+        "Alert channels to configure (space = toggle):" 15 70 5 \
+        discord "Discord webhook" OFF \
+        teams   "Microsoft Teams webhook" OFF \
+        webhook "Generic HTTP webhook (JSON POST)" OFF \
+        email   "Email via SMTP" OFF \
+        syslog  "Syslog (local, or host:port via UDP)" OFF \
+        3>&1 1>&2 2>&3) || die
+    if [ -n "$NCH" ]; then
+        NOTIFY=1
+        NMIN=$(W --default-item warn --menu \
+            "Minimum severity to send:" 13 70 3 \
+            info "Everything, including informational notices" \
+            warn "Warnings and critical only (recommended)" \
+            crit "Critical alerts only" 3>&1 1>&2 2>&3) || die
+        for c in $NCH; do case $c in
+            discord)
+                DURL=$(ask_url "Discord webhook URL:\n\n(channel settings -> Integrations -> Webhooks)") || die
+                DMEN=$(ask "Mention on critical alerts (optional):\n@here, @everyone, <@&roleID> or <@userID>.\nLeave empty for none." "") || die
+                MEN_RE='^[[:alnum:]_@<>&!:#.-]{1,64}$'
+                if [ -n "$DMEN" ] && ! [[ "$DMEN" =~ $MEN_RE ]]; then
+                    W --msgbox "Invalid mention format — ignoring it." 8 55 || die
+                    DMEN=""
+                fi
+                ;;
+            teams)
+                TURL=$(ask_url "Teams Incoming Webhook URL:\n\n(channel -> Connectors -> Incoming Webhook)") || die
+                ;;
+            webhook)
+                WURL=$(ask_url "Generic webhook URL (receives a JSON POST):") || die
+                ;;
+            syslog)
+                SLOG=$(ask "Syslog target:\n\n'local' for this device's syslog, or host[:port] for a\nremote collector (UDP)." "local") || die
+                SLOG=${SLOG:-local}
+                ;;
+            email)
+                SMTP_HOST=$(ask_req "SMTP server hostname:" "") || die
+                SMTP_PORT=$(ask "SMTP port:" "587") || die
+                case "$SMTP_PORT" in *[!0-9]*) SMTP_PORT=587;; esac
+                { [ "$SMTP_PORT" -ge 1 ] && [ "$SMTP_PORT" -le 65535 ]; } 2>/dev/null || SMTP_PORT=587
+                SMTP_TLS=$(W --default-item starttls --menu \
+                    "SMTP security:" 13 70 3 \
+                    starttls "STARTTLS — port 587 (most providers)" \
+                    ssl      "SSL/TLS — port 465" \
+                    none     "None — port 25 (local relay only)" \
+                    3>&1 1>&2 2>&3) || die
+                SMTP_USER=$(ask "SMTP username (leave empty for no auth):" "") || die
+                if [ -n "$SMTP_USER" ]; then
+                    SMTP_PASS=$(askpw "SMTP password:") || die
+                fi
+                SMTP_FROM=$(ask "From address:" "apc-nmc@$HN") || die
+                SMTP_FROM=${SMTP_FROM:-apc-nmc@$HN}
+                SMTP_TO=$(ask_req "Recipient address(es), comma-separated:" "") || die
+                ;;
+        esac; done
+    fi
+fi
+
 yesno "Generate a fresh self-signed HTTPS certificate for the web interface?\n(Recommended: the image ships a placeholder cert.)" && REGEN_CERT=1 || REGEN_CERT=0
 
 SUMMARY="Hostname:      $HN
@@ -117,6 +231,7 @@ Web admin:     $WEBUSER
 UPS:           $UPS ($DRIVER, port $UPORT)
 SNMP:          ro=$ROCOM rw=$RWCOM
 Location:      $LOC / $CONTACT
+Alerts:        $([ $NOTIFY -eq 1 ] && echo "$(echo $NCH | tr '\n' ' ') (min: $NMIN)" || echo "not configured")
 New TLS cert:  $([ $REGEN_CERT -eq 1 ] && echo yes || echo no)
 
 Apply this configuration?"
@@ -176,6 +291,26 @@ sed -i -E "s/^(sysContact)[[:space:]].*/\1 $(esc_sed "$CONTACT")/" "$SNMP_CONF"
 SHA_P=$(openssl rand -hex 16); AES_P=$(openssl rand -hex 16)
 sed -i -E "s/(createUser[[:space:]]+\S+[[:space:]]+SHA[[:space:]]+)\"[^\"]*\"([[:space:]]+AES[[:space:]]+)\"[^\"]*\"/\1\"$SHA_P\"\2\"$AES_P\"/" "$SNMP_CONF"
 
+# --- alert notifications -> state.json cfg (same store as the web UI)
+if [ $NOTIFY -eq 1 ]; then
+    echo "   alerts: saving channel config"
+    state_set notify_min_sev "$NMIN"
+    [ -n "$DURL" ] && state_set notify_discord         "$DURL"
+    [ -n "$DMEN" ] && state_set notify_discord_mention "$DMEN"
+    [ -n "$TURL" ] && state_set notify_teams           "$TURL"
+    [ -n "$WURL" ] && state_set notify_webhook         "$WURL"
+    [ -n "$SLOG" ] && state_set notify_syslog          "$SLOG"
+    if [ -n "$SMTP_HOST" ]; then
+        state_set notify_smtp_host "$SMTP_HOST"
+        state_set notify_smtp_port "$SMTP_PORT"
+        state_set notify_smtp_tls  "$SMTP_TLS"
+        state_set notify_smtp_user "$SMTP_USER"
+        state_set notify_smtp_pass "$SMTP_PASS"
+        state_set notify_smtp_from "$SMTP_FROM"
+        state_set notify_smtp_to   "$SMTP_TO"
+    fi
+fi
+
 # --- TLS cert
 if [ $REGEN_CERT -eq 1 ]; then
     openssl req -x509 -newkey rsa:2048 -nodes \
@@ -190,6 +325,67 @@ for s in "nut-driver@$UPS" nut-server nut-monitor snmpd apc-nmc-web; do
     echo "   restarting: $s"
     systemctl restart "$s" 2>&1 || echo "   !! could not restart $s"
 done
+
+# --- optional live test of the channels just configured
+if [ $NOTIFY -eq 1 ] && yesno "Send a test alert on the configured channel(s) now?\n\nNeeds working network/DNS — may not be up yet on first boot\n(failures are harmless; test again from the web UI later)."; then
+    TEST_RES=""
+    ntest() { # $1=channel $2=url $3=json — echoes "name: sent | FAILED ..."
+        local e
+        if e=$(curl -fsS -o /dev/null -m 8 -X POST \
+                 -H 'Content-Type: application/json' \
+                 -H 'User-Agent: apc-nmc/test (UPS monitor)' \
+                 -d "$3" "$2" 2>&1); then
+            echo "$1: sent"
+        else
+            echo "$1: FAILED — $(echo "$e" | tail -1)"
+        fi
+    }
+    [ -n "$DURL" ] && TEST_RES+=$(ntest discord "$DURL" \
+        '{"username":"APC UPS","content":"apc-nmc: test alert — notifications are configured."}')$'\n'
+    [ -n "$TURL" ] && TEST_RES+=$(ntest teams "$TURL" \
+        '{"@type":"MessageCard","@context":"http://schema.org/extensions","summary":"apc-nmc test","text":"apc-nmc: test alert — notifications are configured."}')$'\n'
+    [ -n "$WURL" ] && TEST_RES+=$(ntest webhook "$WURL" \
+        '{"text":"apc-nmc: test alert — notifications are configured.","sev":"info","source":"apc-nmc"}')$'\n'
+    if [ -n "$SLOG" ]; then
+        if [ "$SLOG" = local ] || [ "$SLOG" = /dev/log ]; then
+            logger -p daemon.info -t apc-nmc "apc-nmc: test alert" \
+                && TEST_RES+=$'syslog: sent to local syslog\n' \
+                || TEST_RES+=$'syslog: FAILED\n'
+        else
+            _h=${SLOG%%:*}; _p=514; case $SLOG in *:*) _p=${SLOG##*:};; esac
+            logger -n "$_h" -P "$_p" -d -p daemon.info -t apc-nmc \
+                "apc-nmc: test alert" 2>/dev/null \
+                && TEST_RES+="syslog: sent to $SLOG (UDP — verify on the collector)\n" \
+                || TEST_RES+=$'syslog: FAILED\n'
+        fi
+    fi
+    if [ -n "$SMTP_HOST" ]; then
+        if python3 - "$SMTP_HOST" "$SMTP_PORT" "$SMTP_TLS" "$SMTP_USER" \
+                  "$SMTP_PASS" "$SMTP_FROM" "$SMTP_TO" <<'PY' 2>/tmp/.ntest_smtp
+import smtplib, sys
+from email.message import EmailMessage
+host, port, tls, user, pw, frm, to = sys.argv[1:8]
+m = EmailMessage()
+m["Subject"] = "[APC UPS] test alert"
+m["From"] = frm; m["To"] = to
+m.set_content("apc-nmc: test alert - notifications are configured.\n")
+s = smtplib.SMTP_SSL(host, int(port), timeout=10) if tls == "ssl" \
+    else smtplib.SMTP(host, int(port), timeout=10)
+if tls == "starttls":
+    s.starttls(); s.ehlo()
+if user:
+    s.login(user, pw)
+s.send_message(m); s.quit()
+PY
+        then
+            TEST_RES+=$'email:   sent\n'
+        else
+            TEST_RES+="email:   FAILED — $(tail -1 /tmp/.ntest_smtp)\n"
+        fi
+        rm -f /tmp/.ntest_smtp
+    fi
+    say "Test alert results:\n\n$TEST_RES"
+fi
 
 say "Configuration applied!\n\nWeb interface:  https://$HN  (or this device's IP)\nUPS monitoring: nut-server on port 3493\nSNMP:           port 161\n\nYou can re-run this wizard anytime: sudo firstboot-wizard.sh"
 yesno "Reboot now to apply everything cleanly?" && reboot || true
