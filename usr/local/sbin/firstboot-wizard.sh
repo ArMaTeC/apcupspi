@@ -10,8 +10,9 @@ set -u
 export TERM="${TERM:-xterm}"
 infocmp "$TERM" >/dev/null 2>&1 || export TERM=xterm
 # Always take input from the controlling terminal — safe under `curl | bash`
-# where stdin is the pipe.
-W() { /usr/bin/whiptail "$@" </dev/tty; }
+# where stdin is the pipe. Draw on it too: whiptail's UI goes to stdout, so a
+# piped/tee'd run would render dialogs invisibly and look like a hang.
+W() { /usr/bin/whiptail "$@" </dev/tty >/dev/tty; }
 
 die() { printf '\nWizard aborted.\n' >&2; exit 130; }
 trap 'die' INT TERM

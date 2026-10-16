@@ -49,9 +49,10 @@ apt-get install -y \
 # as raw escapes like ^[[C. Fall back to xterm when TERM is unusable.
 export TERM="${TERM:-xterm}"
 infocmp "$TERM" >/dev/null 2>&1 || export TERM=xterm
-# When run as `curl | bash`, stdin is the pipe — whiptail can't read keys.
-# Always take input from the controlling terminal instead.
-W() { /usr/bin/whiptail "$@" </dev/tty; }
+# When run as `curl | bash` or piped/tee'd, stdin and stdout may not be the
+# terminal — whiptail draws on stdout, so the dialog would be invisible and
+# look like a hang. Always read AND draw on the controlling terminal.
+W() { /usr/bin/whiptail "$@" </dev/tty >/dev/tty; }
 aborted() { printf '\nInstall aborted.\n' >&2; exit 130; }
 trap 'aborted' INT TERM
 # yes/no prompts: Yes skips nothing (No = skip feature); Esc = abort install.
