@@ -19,9 +19,9 @@ UPSD_USERS=/etc/nut/upsd.users
 UPSMON_CONF=/etc/nut/upsmon.conf
 SNMP_CONF=/etc/snmp/snmpd.conf
 
-say()  { $W --msgbox "$1" 12 70; }
-ask()  { $W --inputbox "$1" 10 70 "$2" 3>&1 1>&2 2>&3; }
-askpw(){ $W --passwordbox "$1" 10 70 3>&1 1>&2 2>&3; }
+say()  { W --msgbox "$1" 12 70; }
+ask()  { W --inputbox "$1" 10 70 "$2" 3>&1 1>&2 2>&3; }
+askpw(){ W --passwordbox "$1" 10 70 3>&1 1>&2 2>&3; }
 
 ini_set() { # file section key value — write an ini key via python3
     python3 - "$1" "$2" "$3" "$4" <<'PY'
@@ -43,19 +43,19 @@ esc_sed() { printf '%s' "$1" | sed 's/[\&/|]/\\&/g'; }
 pw_pair() { # $1=prompt -> echoes confirmed password
     while :; do
         p1=$(askpw "$1"); p2=$(askpw "Confirm: $1")
-        if [ -z "$p1" ]; then $W --msgbox "Password cannot be empty." 8 50; continue; fi
+        if [ -z "$p1" ]; then W --msgbox "Password cannot be empty." 8 50; continue; fi
         [ "$p1" = "$p2" ] && { echo "$p1"; return; }
-        $W --msgbox "Passwords do not match, try again." 8 50
+        W --msgbox "Passwords do not match, try again." 8 50
     done
 }
 
 # ------------------------------------------------------------------ collect
-$W --msgbox "Welcome!\n\nThis is the first boot of this image. The wizard will now ask you to configure:\n\n  - hostname and credentials\n  - network\n  - UPS monitoring (NUT) and web interface\n  - SNMP\n\nPress OK to begin." 18 70
+W --msgbox "Welcome!\n\nThis is the first boot of this image. The wizard will now ask you to configure:\n\n  - hostname and credentials\n  - network\n  - UPS monitoring (NUT) and web interface\n  - SNMP\n\nPress OK to begin." 18 70
 
 HN=$(ask "Hostname for this device:" "apc-nmc"); HN=${HN:-apc-nmc}
 ROOTPW=$(pw_pair "New root password (used for console + SSH):")
 SSHKEY=$(ask "SSH public key to authorize for root (ssh-ed25519/ssh-rsa/...).\nLeave empty to use password login only:" "")
-NET=$($W --menu "Network configuration for eth0:" 12 70 2 \
+NET=$(W --menu "Network configuration for eth0:" 12 70 2 \
     "dhcp"   "Automatic (DHCP) - recommended" \
     "static" "Static IP address" 3>&1 1>&2 2>&3 || echo dhcp)
 CIDR=""; GW=""; DNS=""
@@ -80,7 +80,7 @@ RWCOM=$(ask "SNMP write community (v1/v2c):" "private"); RWCOM=${RWCOM:-private}
 LOC=$(ask "Device location (shown in web UI + SNMP):" "Server Room"); LOC=${LOC:-Server Room}
 CONTACT=$(ask "Device contact (shown in web UI + SNMP):" "admin@localhost"); CONTACT=${CONTACT:-admin@localhost}
 
-$W --yesno "Generate a fresh self-signed HTTPS certificate for the web interface?\n(Recommended: the image ships a placeholder cert.)" 10 70 && REGEN_CERT=1 || REGEN_CERT=0
+W --yesno "Generate a fresh self-signed HTTPS certificate for the web interface?\n(Recommended: the image ships a placeholder cert.)" 10 70 && REGEN_CERT=1 || REGEN_CERT=0
 
 SUMMARY="Hostname:      $HN
 Root password: (set)
@@ -93,7 +93,7 @@ Location:      $LOC / $CONTACT
 New TLS cert:  $([ $REGEN_CERT -eq 1 ] && echo yes || echo no)
 
 Apply this configuration?"
-$W --yesno "$SUMMARY" 22 70 || { say "Cancelled. The wizard will run again on next boot,\nor re-run: sudo firstboot-wizard.sh"; exit 0; }
+W --yesno "$SUMMARY" 22 70 || { say "Cancelled. The wizard will run again on next boot,\nor re-run: sudo firstboot-wizard.sh"; exit 0; }
 
 # -------------------------------------------------------------------- apply
 OLD_HN=$(hostname)
@@ -163,4 +163,4 @@ for s in "nut-driver@$UPS" nut-server nut-monitor snmpd apc-nmc-web; do
 done
 
 say "Configuration applied!\n\nWeb interface:  https://$HN  (or this device's IP)\nUPS monitoring: nut-server on port 3493\nSNMP:           port 161\n\nYou can re-run this wizard anytime: sudo firstboot-wizard.sh"
-$W --yesno "Reboot now to apply everything cleanly?" 8 60 && reboot || true
+W --yesno "Reboot now to apply everything cleanly?" 8 60 && reboot || true

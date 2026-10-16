@@ -48,7 +48,7 @@ infocmp "$TERM" >/dev/null 2>&1 || export TERM=xterm
 # When run as `curl | bash`, stdin is the pipe — whiptail can't read keys.
 # Always take input from the controlling terminal instead.
 W() { /usr/bin/whiptail "$@" </dev/tty; }
-confirm() { $W --yesno "$1" 10 68; }
+confirm() { W --yesno "$1" 10 68; }
 
 # ------------------------------------------------------- payload resolution
 SRC=""
