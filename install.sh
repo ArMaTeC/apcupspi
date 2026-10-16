@@ -139,7 +139,7 @@ put etc/systemd/system/ssh.service.d 2>/dev/null || true
 install -D -m 0640 /dev/stdin /etc/nut/upsd.users <<'EOF'
 [upsmon]
     password = CHANGE_ME
-    upsmon primary
+    upsmon master
     actions = SET
     instcmds = ALL
 [admin]
@@ -161,6 +161,8 @@ RBWARNTIME 43200
 NOCOMMWARNTIME 300
 FINALDELAY 5
 EOF
+# NUT daemons run as the 'nut' user — they must be able to read these files
+chgrp -R nut /etc/nut
 install -D -m 0640 /dev/stdin /etc/snmp/snmpd.conf <<'EOF'
 # Emulate an APC Network Management Card 2 (AP9631)
 # backed by apc-nmc-agent.py + NUT/upsd

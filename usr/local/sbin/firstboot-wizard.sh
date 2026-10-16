@@ -54,7 +54,8 @@ upsd_set_pw() { # $1=user $2=password — upsd.users is not strict INI (bare
         { print }
         END { if (!found) exit 1 }
     ' "$UPSD_USERS" > "$UPSD_USERS.tmp" \
-      && mv "$UPSD_USERS.tmp" "$UPSD_USERS" && chmod 640 "$UPSD_USERS"
+      && mv "$UPSD_USERS.tmp" "$UPSD_USERS" \
+      && chown root:nut "$UPSD_USERS" && chmod 640 "$UPSD_USERS"
 }
 
 pw_pair() { # $1=prompt -> echoes confirmed password; Esc/Ctrl+C propagates
