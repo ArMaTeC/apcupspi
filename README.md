@@ -39,7 +39,7 @@ configs.
 | --- | --- |
 | 🌐 **NMC2 Web UI** | Port `443` (`:80` redirects) — status, logs, control, tests and configuration, backed live by NUT |
 | 📡 **SNMP Agent** | Port `161` — APC PowerNet-MIB (`.1.3.6.1.4.1.318`) via `pass_persist`; v1/v2c communities + v3 read-only user |
-| 🔋 **NUT Backend** | `upsd` on `3493` + `upsmon` shutdown controller; `apc_modbus` driver **included** (not in Debian's `nut`) |
+| 🔋 **NUT Backend** | `upsd` on `3493` + `upsmon` shutdown controller; `apc_modbus` **built from vendored NUT 2.8.5 source** on the target (prebuilt binary as fallback) |
 | 🛡️ **Resilience** | Kernel watchdog + `RuntimeWatchdogSec`, panic-reboot sysctl, per-service OOM tuning, `net-watchdog` connectivity recovery |
 | 💾 **Imaging Tool** | `pi-system-backup.sh` — flashable `.img` of the running system; `--clean` strips secrets for a publishable image |
 | 🧙 **Setup Wizard** | Interactive first-boot wizard (hostname, credentials, network, UPS, SNMP, certs) — re-runnable anytime |
@@ -123,8 +123,9 @@ The repo mirrors filesystem layout — files land exactly where they sit:
 install.sh                  installer (payload = this repo)
 ├── usr/local/bin/          apc-nmc-web.py · apc-nmc-agent.py · web UI assets
 ├── usr/local/sbin/         firstboot-wizard.sh · pi-system-backup.sh · net-watchdog.sh
-├── usr/lib/nut/apc_modbus  locally-built NUT driver (arm64)
-├── usr/local/lib/          libmodbus.so.5 (runtime dep of apc_modbus)
+├── usr/lib/nut/apc_modbus  fallback prebuilt NUT driver (arm64)
+├── usr/local/lib/          fallback libmodbus.so.5 (runtime dep of apc_modbus)
+├── vendor/                 NUT 2.8.5 + NUT libmodbus fork sources (built on target)
 ├── etc/nut/                NUT config templates (secrets generated, never shipped)
 ├── etc/apc-nmc/            nmc.conf.default + public CA material
 ├── etc/systemd/system/     units, timers, hardening & OOM drop-ins

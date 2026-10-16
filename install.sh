@@ -42,7 +42,8 @@ apt-get install -y \
     snmpd snmp \
     whiptail openssl rsync parted dosfstools cloud-guest-utils \
     curl ca-certificates iputils-ping git \
-    network-manager avahi-daemon python3
+    network-manager avahi-daemon python3 \
+    build-essential libusb-1.0-0-dev
 
 # newt breaks on unknown TERM types (PuTTY variants, serial) — keys leak
 # as raw escapes like ^[[C. Fall back to xterm when TERM is unusable.
@@ -88,27 +89,56 @@ put usr/local/sbin/firstboot-wizard.sh  0755
 put usr/local/sbin/pi-system-backup.sh  0755
 put usr/local/sbin/net-watchdog.sh      0755
 
-# apc_modbus is not in Debian's nut package — it was built locally.
-if [ -f "$SRC/usr/lib/nut/apc_modbus" ]; then
-    put usr/lib/nut/apc_modbus 0755
-    # the binary was built with custom paths — bridge them to the Debian layout:
-    #   sysconfdir=/usr/local/ups/etc  and  statepath=/var/state/ups
-    mkdir -p /usr/local/ups /var/state
-    ln -sfn /etc/nut /usr/local/ups/etc
-    ln -sfn /run/nut /var/state/ups
-else
-    echo "!! usr/lib/nut/apc_modbus not in payload — the apc_modbus driver"
-    echo "   must be copied from a working system or built from nut>=2.8.1 source."
+# apc_modbus is not in Debian's nut package — it is built from the vendored
+# NUT 2.8.5 source (with the NUT libmodbus fork for USB support). Falls back
+# to the shipped prebuilt binary + library if no source is present.
+build_nut_driver() {
+    local work=/tmp/nutbuild.$$ J; J=$(nproc 2>/dev/null || echo 1)
+    mkdir -p "$work" || return 1
+    echo ">> Building libmodbus (NUT fork, USB transport) from source..."
+    tar -xzf "$SRC"/vendor/libmodbus-*.tar.gz -C "$work" || return 1
+    (cd "$work"/libmodbus-* \
+        && ./configure --prefix=/usr/local >>"$work/build.log" 2>&1 \
+        && make -j"$J" >>"$work/build.log" 2>&1 \
+        && make install >>"$work/build.log" 2>&1) || {
+        echo "!! libmodbus build failed — see $work/build.log"; return 1; }
+    ldconfig
+    echo ">> Building apc_modbus from NUT 2.8.5 source (a few minutes)..."
+    tar -xzf "$SRC"/vendor/nut-2.8.5-src.tar.gz -C "$work" || return 1
+    (cd "$work"/nut-2.8.5 \
+        && ./configure --with-drivers=apc_modbus --with-modbus+usb=yes \
+            --with-doc=no --without-asciidoc --without-pkg-config \
+            >>"$work/build.log" 2>&1 \
+        && make -j"$J" >>"$work/build.log" 2>&1 \
+        && install -s -m 0755 drivers/apc_modbus /usr/lib/nut/) || {
+        echo "!! NUT build failed — see $work/build.log"; return 1; }
+    echo ">> apc_modbus built and installed to /usr/lib/nut/"
+    rm -rf "$work"
+}
+NUT_BUILT=0
+if ls "$SRC"/vendor/nut-2.8.5-src.tar.gz >/dev/null 2>&1 \
+   && ls "$SRC"/vendor/libmodbus-*.tar.gz >/dev/null 2>&1; then
+    build_nut_driver && NUT_BUILT=1 || echo "!! falling back to shipped binaries"
 fi
-if ls "$SRC"/usr/local/lib/libmodbus.so.5* >/dev/null 2>&1; then
-    put usr/local/lib/libmodbus.so.5 0644
-    put usr/local/lib/libmodbus.so.5.1.0 0644
-    ln -sf libmodbus.so.5.1.0 /usr/local/lib/libmodbus.so.5
-    ln -sf libmodbus.so.5 /usr/local/lib/libmodbus.so
-else
-    apt-get install -y -qq libmodbus5 || true
+if [ $NUT_BUILT -eq 0 ]; then
+    if [ -f "$SRC/usr/lib/nut/apc_modbus" ]; then
+        put usr/lib/nut/apc_modbus 0755
+    else
+        echo "!! no apc_modbus driver available (no source, no binary)"
+    fi
+    if ls "$SRC"/usr/local/lib/libmodbus.so.5* >/dev/null 2>&1; then
+        put usr/local/lib/libmodbus.so.5 0644
+        put usr/local/lib/libmodbus.so.5.1.0 0644
+        ln -sf libmodbus.so.5.1.0 /usr/local/lib/libmodbus.so.5
+        ln -sf libmodbus.so.5 /usr/local/lib/libmodbus.so
+    fi
+    ldconfig 2>/dev/null || true
 fi
-ldconfig 2>/dev/null || true
+# The driver is built with custom paths — bridge them to the Debian layout:
+#   sysconfdir=/usr/local/ups/etc  and  statepath=/var/state/ups
+mkdir -p /usr/local/ups /var/state
+ln -sfn /etc/nut /usr/local/ups/etc
+ln -sfn /run/nut /var/state/ups
 
 # --------------------------------------------------------------- deploy conf
 echo ">> Installing configuration files..."
