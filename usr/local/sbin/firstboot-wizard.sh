@@ -114,6 +114,7 @@ Apply this configuration?"
 W --yesno "$SUMMARY" 22 70 || { say "Cancelled. The wizard will run again on next boot,\nor re-run: sudo firstboot-wizard.sh"; exit 0; }
 
 # -------------------------------------------------------------------- apply
+echo ">> Applying configuration..."
 OLD_HN=$(hostname)
 hostnamectl set-hostname "$HN"
 if grep -qw "$OLD_HN" /etc/hosts; then
@@ -177,7 +178,8 @@ fi
 
 # --- restart affected services
 for s in "nut-driver@$UPS" nut-server nut-monitor snmpd apc-nmc-web; do
-    systemctl restart "$s" 2>/dev/null || true
+    echo "   restarting: $s"
+    systemctl restart "$s" 2>&1 || echo "   !! could not restart $s"
 done
 
 say "Configuration applied!\n\nWeb interface:  https://$HN  (or this device's IP)\nUPS monitoring: nut-server on port 3493\nSNMP:           port 161\n\nYou can re-run this wizard anytime: sudo firstboot-wizard.sh"

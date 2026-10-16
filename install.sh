@@ -34,8 +34,10 @@ echo "============================================================"
 
 # ---------------------------------------------------------------- packages
 export DEBIAN_FRONTEND=noninteractive
-apt-get update -qq
-apt-get install -y -qq \
+echo ">> Updating package lists..."
+apt-get update
+echo ">> Installing packages (this can take a few minutes)..."
+apt-get install -y \
     nut nut-server nut-client \
     snmpd snmp \
     whiptail openssl rsync parted dosfstools cloud-guest-utils \
@@ -201,6 +203,7 @@ chmod 640 /etc/apc-nmc/nmc.conf 2>/dev/null || true
 # self-signed HTTPS cert (wizard can regenerate with the real hostname)
 mkdir -p /var/lib/apc-nmc
 if [ ! -s /etc/apc-nmc/nmc.key ]; then
+    echo ">> Generating self-signed TLS certificate..."
     openssl req -x509 -newkey rsa:2048 -nodes \
         -keyout /etc/apc-nmc/nmc.key -out /etc/apc-nmc/nmc.crt -days 3650 \
         -subj "/CN=apc-nmc" -addext "subjectAltName=DNS:apc-nmc" 2>/dev/null \
@@ -261,6 +264,7 @@ EOF
 # dedicated swapfile (UPS shutdown workloads)
 if confirm "Create a dedicated 10G /var/swap swapfile?"; then
     if [ ! -f /var/swap ]; then
+        echo ">> Creating /var/swap (10G)..."
         fallocate -l 10G /var/swap && chmod 600 /var/swap && mkswap /var/swap >/dev/null
     fi
     grep -q '^/var/swap' /etc/fstab || echo '/var/swap none swap sw,pri=10 0 0' >> /etc/fstab
@@ -288,14 +292,16 @@ fi
 
 # ------------------------------------------------------------- enable stack
 echo ">> Enabling services..."
-systemctl daemon-reload
+systemctl daemon-reload && echo "   systemd reloaded"
 systemctl unmask ssh.service 2>/dev/null || true
 for s in nut-server nut-monitor nut-driver-enumerator.path \
+         nut-driver-enumerator.service \
          snmpd apc-nmc-web net-watchdog.timer ssh serial-getty@ttyS0; do
-    systemctl enable "$s" 2>/dev/null || true
+    echo "   enabling: $s"
+    systemctl enable "$s" 2>&1 || echo "   !! could not enable $s"
 done
-systemctl enable nut-driver-enumerator.service 2>/dev/null || true
 systemctl mask userconfig.service 2>/dev/null || true
+echo ">> Services enabled."
 
 echo
 echo "============================================================"
