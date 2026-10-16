@@ -36,7 +36,7 @@ configs.
 ## ✨ Features
 
 | | |
-|---|---|
+| --- | --- |
 | 🌐 **NMC2 Web UI** | Port `443` (`:80` redirects) — status, logs, control, tests and configuration, backed live by NUT |
 | 📡 **SNMP Agent** | Port `161` — APC PowerNet-MIB (`.1.3.6.1.4.1.318`) via `pass_persist`; v1/v2c communities + v3 read-only user |
 | 🔋 **NUT Backend** | `upsd` on `3493` + `upsmon` shutdown controller; `apc_modbus` driver **included** (not in Debian's `nut`) |
@@ -88,7 +88,7 @@ Runs at the end of the install — and on first boot of clean images — via
 ## 🔌 Ports & services
 
 | Port | Service | Purpose |
-|------|---------|---------|
+| ------ | --------- | --------- |
 | `443/tcp` | `apc-nmc-web` | HTTPS management UI (`80` redirects) |
 | `3493/tcp` | `nut-server` (`upsd`) | NUT network daemon — monitor remotely |
 | `161/udp` | `snmpd` | SNMP — PowerNet-MIB subtree |
@@ -97,7 +97,7 @@ Runs at the end of the install — and on first boot of clean images — via
 ## 🛠️ Install-time options
 
 | Prompt | What it does |
-|--------|--------------|
+| -------- | -------------- |
 | Hardware hardening | `enable_uart`, hardware watchdog, disable onboard WiFi/BT |
 | Pi 4 overclock | `arm_freq=1750`, `over_voltage=2`, `gpu_freq=600` (Pi 5 ignores it) |
 | `/var/swap` | Creates a dedicated 10G swapfile |
