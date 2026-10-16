@@ -1,16 +1,18 @@
+<!-- markdownlint-disable MD033 MD041 -->
 <div align="center">
 
 # 🔌 apcupspi
 
+<!-- markdownlint-disable-next-line MD001 -->
 ### Turn a Raspberry Pi into an APC Network Management Card
 
 *Give any NUT-monitored UPS a real **AP9631 (NMC2)** web UI, SNMP agent and
 management card presence — for the price of a Pi.*
 
 [![Raspberry Pi](https://img.shields.io/badge/Raspberry%20Pi-4%20%7C%205-A22846?logo=raspberrypi&logoColor=white)](https://www.raspberrypi.com/)
-[![OS](https://img.shields.io/badge/OS-Raspberry%20Pi%20OS%20%7C%20Debian%2064--bit-1793D1?logo=debian&logoColor=white)]()
-[![Python](https://img.shields.io/badge/Python-3.x-3776AB?logo=python&logoColor=white)]()
-[![NUT](https://img.shields.io/badge/NUT-2.8.x-E95420?logo=data:image/svg+xml;base64,)]()
+[![OS](https://img.shields.io/badge/OS-Raspberry%20Pi%20OS%20%7C%20Debian%2064--bit-1793D1?logo=debian&logoColor=white)](https://www.raspberrypi.com/software/)
+[![Python](https://img.shields.io/badge/Python-3.x-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![NUT](https://img.shields.io/badge/NUT-2.8.x-E95420?logo=data:image/svg+xml;base64,)](https://networkupstools.org/)
 [![GitHub last commit](https://img.shields.io/github/last-commit/ArMaTeC/apcupspi)](https://github.com/ArMaTeC/apcupspi/commits)
 [![Repo size](https://img.shields.io/github/repo-size/ArMaTeC/apcupspi)](https://github.com/ArMaTeC/apcupspi)
 
@@ -119,7 +121,7 @@ Flash the `.img.gz` straight to a new SSD/SD with Raspberry Pi Imager or
 
 The repo mirrors filesystem layout — files land exactly where they sit:
 
-```
+```text
 install.sh                  installer (payload = this repo)
 ├── usr/local/bin/          apc-nmc-web.py · apc-nmc-agent.py · web UI assets
 ├── usr/local/sbin/         firstboot-wizard.sh · pi-system-backup.sh · net-watchdog.sh
