@@ -66,10 +66,11 @@ cd apcupspi
 sudo ./install.sh
 ```
 
-**One-liner** (downloads the repo tarball itself):
+**One-liner** (always fetches the latest commit — raw.githubusercontent can
+serve a cached copy for a few minutes after pushes):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ArMaTeC/apcupspi/main/install.sh | sudo bash
+curl -fsSL https://github.com/ArMaTeC/apcupspi/archive/refs/heads/main.tar.gz | tar -xz -C /tmp && sudo bash /tmp/apcupspi-main/install.sh
 ```
 
 ## 🧙 Configuration wizard
