@@ -176,6 +176,7 @@ do_apply() {
     # same driver does not restart it needlessly.
     DRIVER_CHG=0
     DRV_NEW=""
+    LIBMB_BUILT=0
     if ls "${SRC}"vendor/nut-2.8.5-src.tar.gz \
             "${SRC}"vendor/libmodbus-*.tar.gz >/dev/null 2>&1 \
             && command -v gcc >/dev/null && command -v make >/dev/null; then
@@ -187,6 +188,7 @@ do_apply() {
                     && make -j"$J" >>"$LOG" 2>&1 \
                     && make install >>"$LOG" 2>&1); then
             ldconfig
+            LIBMB_BUILT=1
             say "  rebuilt libmodbus"
         else
             say "WARN: libmodbus build failed — keeping installed copy"
@@ -224,10 +226,18 @@ do_apply() {
             DRIVER_CHG=1; say "  updated /usr/lib/nut/apc_modbus"
         fi
     fi
-    for l in "$SRC"usr/local/lib/libmodbus.so.5*; do
-        [ -e "$l" ] || continue
-        deploy "${l#"$SRC"}" "/${l#"$SRC"}" 0644
-    done
+    # shipped libmodbus is only the fallback — a source build already
+    # installed the fresh library above. cp -a keeps .so symlinks as
+    # links (install would dereference them into duplicate files).
+    if [ "$LIBMB_BUILT" = 0 ]; then
+        for l in "$SRC"usr/local/lib/libmodbus.so*; do
+            [ -e "$l" ] || continue
+            t="/${l#"$SRC"}"
+            cmp -s "$l" "$t" 2>/dev/null && continue
+            [ -e "$t" ] && { mkdir -p "$BAK$(dirname "$t")"; cp -a "$t" "$BAK$t"; }
+            cp -a "$l" "$t" && CHANGED="$CHANGED $t" && say "  updated $t"
+        done
+    fi
     # custom paths the driver was built with (same bridge install.sh makes)
     mkdir -p /usr/local/ups /var/state
     ln -sfn /etc/nut /usr/local/ups/etc
