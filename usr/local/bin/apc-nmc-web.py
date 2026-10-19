@@ -49,6 +49,7 @@ LOGIN_LOCKOUT = 300          # seconds
 VERSION_FILE = "/etc/apc-nmc/version"
 UPDATE_STATE = "/var/lib/apc-nmc/update.json"
 UPDATE_STATUS = "/var/lib/apc-nmc/update-status.json"
+UPDATE_LOG = "/var/lib/apc-nmc/update.log"
 UPDATE_TOOL = "/usr/local/sbin/apc-nmc-update.sh"
 
 _cp = configparser.ConfigParser()
@@ -2297,6 +2298,79 @@ def pg_about(d, msg: "str | tuple" = ""):
                                               csrf_input(d), rows, dev)
 
 
+def pg_update_apply():
+    """Live update console — JS polls /about/update/progress and streams
+    update.log into a terminal-style box, so the NUT build is visible
+    as it happens. Works for both the POST landing page and a later GET
+    reload while the update is still running."""
+    return """<h1 class="page">Software Update</h1>
+<div class="card"><h3 id="updPhase">Update in progress</h3><div class="pad">
+<pre id="updCon" class="updcon">connecting&#8230;</pre>
+<p id="updDone"></p>
+<p><a class="btn sec" href="/about/system">Back to About &#8250;</a></p>
+</div></div>
+<script>
+(function(){
+var con=document.getElementById('updCon'),
+    ph=document.getElementById('updPhase'),
+    dn=document.getElementById('updDone'),
+    pos=-1,lost=0,idle=0;
+con.textContent='';
+function esc(s){return String(s).replace(/[&<>]/g,function(c){
+  return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c]})}
+function tick(){
+ fetch('/about/update/progress?pos='+pos,{credentials:'same-origin'})
+ .then(function(r){
+   if(r.redirected||r.url.indexOf('/login')>=0)throw'reauth';
+   if(!r.ok)throw'http';
+   return r.json()})
+ .then(function(s){
+   lost=0;
+   if(typeof s.pos==='number')pos=s.pos;
+   if(s.log){
+     con.textContent+=s.log.replace(/\\x1b\\[[0-9;]*[A-Za-z]/g,'');
+     con.scrollTop=con.scrollHeight;
+   }
+   if(s.state==='ok'){
+     ph.textContent='Update complete';
+     dn.innerHTML='<span class="st-ok">Updated to '+esc(s.to||'?')+
+       ' &mdash; reloading&hellip;</span>';
+     setTimeout(function(){location='/about/system'},4000);
+   }else if(s.state==='failed'){
+     ph.textContent='Update failed';
+     dn.innerHTML='<span class="st-warn">'+esc(s.msg||'failed')+'</span>';
+   }else if(!s.state){
+     /* a real apply writes 'running' within a second or two — no state
+        after a few polls means nothing is running (plain GET reload) */
+     if(++idle>=4){
+       ph.textContent='No update in progress';
+       dn.innerHTML='<a href="/about/system">Back to About &#8250; System</a>';
+     }else{
+       ph.textContent='Starting update';
+       setTimeout(tick,1500);
+     }
+   }else{
+     ph.textContent='Update in progress: '+(s.msg||'working');
+     setTimeout(tick,1500);
+   }
+ })
+ .catch(function(e){
+   if(e==='reauth'){
+     ph.textContent='Update still running';
+     dn.innerHTML='This interface restarted and the session ended &mdash; '+
+       '<a href="/about/system">log back in to About &#8250; System</a>.';
+     return;
+   }
+   /* the updater restarts this service as its final step */
+   if(++lost>=3)ph.textContent='Interface restarting, reconnecting';
+   setTimeout(tick,2000);
+ });
+}
+tick();
+})();
+</script>"""
+
+
 def pg_network():
     out = []
     try:
@@ -3288,6 +3362,36 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, buf.getvalue(), "application/gzip",
                               {"Content-Disposition":
                                "attachment; filename=apc-nmc-config.tgz"})
+        if p == "/about/update/progress":
+            # streamed log for the apply page — pos is a byte offset so
+            # each poll only carries new output. pos=-1 = first poll:
+            # start at this run's marker rather than dumping old runs.
+            q = parse_qs(urlparse(self.path).query)
+            try:
+                pos = int(q.get("pos", ["-1"])[0])
+            except ValueError:
+                pos = -1
+            out = _load_json(UPDATE_STATUS)
+            try:
+                with open(UPDATE_LOG, "rb") as f:
+                    f.seek(0, 2)
+                    size = f.tell()
+                    if pos < 0:
+                        pos = max(0, size - 65536)
+                        f.seek(pos)
+                        m = f.read().rfind(b"=== update started")
+                        pos = pos + m if m >= 0 else max(0, size - 8192)
+                    elif pos > size:
+                        pos = 0       # log truncated or rotated
+                    f.seek(pos)
+                    chunk = f.read(262144)
+                out["log"] = chunk.decode("utf-8", "replace")
+                out["pos"] = pos + len(chunk)
+            except OSError:
+                out["log"] = ""
+                out["pos"] = max(0, pos)
+            return self._send(200, json.dumps(out), "application/json",
+                              {"Cache-Control": "no-store"})
         d = self._d()
         if p == "/api/v1/vars":
             return self._send(200, json.dumps(d), "application/json")
@@ -3389,6 +3493,9 @@ class H(BaseHTTPRequestHandler):
                 elif q.get("r", [""])[0] == "err":
                     msg = ("msg-err", q.get("why", ["Failed"])[0])
                 b = pg_about(d, msg)
+                section, leaf = "About", "System"
+            elif p == "/about/update/apply":
+                b = pg_update_apply()
                 section, leaf = "About", "System"
             elif p == "/about/network":
                 b = pg_network()
@@ -3588,16 +3695,8 @@ class H(BaseHTTPRequestHandler):
             if res[0] != "msg-ok":
                 return self._redir("/about/system?r=err&why=" + quote(res[1]))
             log_event("NMC: Software update started by %s." % WEB_USER)
-            body = """<h1 class="page">Software Update</h1>
-<div class="card"><h3>Update in progress</h3><div class="pad">
-<p>The appliance is downloading and installing the update. This
-interface restarts when it finishes &mdash; give it a minute or two,
-then reload.</p>
-<p><a class="btn sec" href="/about/system">Back to About &#8250;</a></p>
-</div></div>
-<script>setTimeout(function(){location="/about/system"},25000);</script>"""
-            return self._send(200, page("APC UPS", body, d, "/about/system",
-                                        "About", "System"),
+            return self._send(200, page("APC UPS", pg_update_apply(), d,
+                                        "/about/system", "About", "System"),
                               extra={"Cache-Control": "no-store"})
         self._page(404, pg_404(), d)
 
