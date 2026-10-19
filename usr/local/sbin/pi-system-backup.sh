@@ -60,7 +60,8 @@ echo ">> Source: $DISK ($NPARTS partitions, id $DISK_ID)"
 
 # ------------------------------------------------------------------- sizing
 EXCL_KB=0
-for p in /var/swap; do
+EXCL_PATHS=(/var/swap)
+for p in "${EXCL_PATHS[@]}"; do
     [ -e "$p" ] && EXCL_KB=$((EXCL_KB + $(du -sk "$p" | cut -f1)))
 done
 CLEAN_DIRS=(/root/.codeium /root/.devin-server /root/audit-run /.git /var/lib/apc-nmc /var/lib/cloud)

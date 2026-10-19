@@ -58,9 +58,9 @@ fi
 for kv in "vendorid=$FV" "productid=$FP"; do
     k=${kv%%=*}; val=${kv#*=}
     if sec_has "$k"; then
-        sed -i -E "/^\\[$UPS\\]/,/^\\[/ s|^([[:space:]]*$k[[:space:]]*=[[:space:]]*).*|\\1$val|" "$CONF"
+        sed -i -E "/^\\[${UPS}\\]/,/^\\[/ s|^([[:space:]]*${k}[[:space:]]*=[[:space:]]*).*|\\1$val|" "$CONF"
     else
-        sed -i -E "0,/^\\[$UPS\\]/ s//&\n    $k = $val/" "$CONF"
+        sed -i -E "0,/^\\[${UPS}\\]/ s//&\n    $k = $val/" "$CONF"
     fi
 done
 
