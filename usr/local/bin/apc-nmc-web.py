@@ -72,7 +72,6 @@ UPSD_PASS = cfg("upsd", "password", "")
 
 WEB_USER = cfg("web", "user", "apc")
 WEB_PASS = cfg("web", "password", "apc")
-API_TOKEN = cfg("web", "api_token", "")   # bearer token for /metrics + /api/v1
 LOCATION = cfg("device", "location", "Server Room")
 CONTACT = cfg("device", "contact", "admin@localhost")
 NMC_MODEL = "AP9631"
@@ -284,6 +283,50 @@ def cfg_set(key, val):
         old["cfg"] = c
         return old
     _atomic_json(STATE_FILE, m)
+
+
+def conf_set(sec, key, value):
+    """Upsert `key = value` inside [sec] of nmc.conf in place — preserves
+    comments and order (unlike configparser's writer), creates the
+    section when absent, reloads the live parser afterwards. Used for
+    settings the shell-side tools read from nmc.conf directly."""
+    value = str(value).replace("\n", " ").replace("\r", " ").strip()
+    try:
+        with open(CONF) as f:
+            lines = f.read().splitlines()
+    except OSError:
+        lines = []
+    key_re = re.compile(r"^\s*#?\s*" + re.escape(key) + r"\s*=")
+    out = []
+    cur = ""          # current section while scanning
+    done = False
+    for line in lines:
+        m = re.match(r"\s*\[\s*([^]]+)", line)
+        if m:
+            s = m.group(1).strip()
+            if cur == sec and not done:      # leaving our section,
+                out.append("%s = %s" % (key, value))  # key never found
+                done = True
+            cur = s
+            out.append(line)
+            continue
+        if cur == sec and key_re.match(line):
+            if not done:
+                out.append("%s = %s" % (key, value))
+                done = True
+            continue          # drop commented/duplicate keys
+        out.append(line)
+    if not done:
+        if cur == sec:                        # key missing, section at EOF
+            out.append("%s = %s" % (key, value))
+        else:                                 # section absent entirely
+            out += ["", "[%s]" % sec, "%s = %s" % (key, value)]
+    tmp = CONF + ".tmp"
+    with open(tmp, "w") as f:
+        f.write("\n".join(out) + "\n")
+    os.chmod(tmp, 0o640)
+    os.replace(tmp, CONF)
+    _cp.read(CONF)
 
 
 # ============================================================ sessions
@@ -2305,6 +2348,20 @@ def pg_about(d, msg: "str | tuple" = ""):
         upd += kv("New Config Options",
                   '<span class="st-warn">%s</span> &mdash; unset in '
                   'nmc.conf' % esc(", ".join(newkeys)))
+    def sel(cur, *opts):
+        return "".join('<option value="%s"%s>%s</option>'
+                       % (o, " selected" if o == cur else "", esc(o))
+                       for o in opts)
+    utok = cfg("web", "api_token", "")
+    tokdisp = ('<code style="word-break:break-all">%s</code>' % esc(utok)
+               if utok else '<span style="color:var(--mut)">not set</span>')
+    tokclear = ("""<form method="post" action="/about/update/token"
+ style="display:inline"
+ onsubmit="return confirm('Clear the API token? Clients using it lose access.')">"""
+                + csrf_input(d)
+                + '<input type="hidden" name="act" value="clear">'
+                  '<button class="btn sec" type="submit">Clear</button></form>'
+                if utok else "")
     return """<h1 class="page">About</h1>%s
 <div class="card"><h3>Software Update</h3><div class="pad">
 <table class="kv">%s</table>
@@ -2314,12 +2371,48 @@ def pg_about(d, msg: "str | tuple" = ""):
  onsubmit="return confirm('Download and install the latest version now? Services (including this interface) restart during the update.')">
 %s<button class="btn sec" type="submit">Update Now</button></form>
 %s</div></div>
+<div class="card"><h3>Update Settings</h3><div class="pad">
+<form method="post" action="/about/update/settings"><table class="kv">
+<tr><td class="lbl">Repository</td><td><input name="urepo" maxlength="64"
+ value="%s" placeholder="owner/name"></td></tr>
+<tr><td class="lbl">Branch</td><td><input name="ubranch" maxlength="64"
+ value="%s"></td></tr>
+<tr><td class="lbl">Channel</td><td><select name="uchannel">%s</select></td></tr>
+<tr><td class="lbl">Verify</td><td><select name="uverify">%s</select></td></tr>
+<tr><td class="lbl">Daily auto-check</td><td>
+ <input type="checkbox" name="uautocheck" value="1"%s></td></tr>
+</table>
+<div style="margin-top:14px">%s
+<button class="btn sec" type="submit">Save Settings</button></div>
+</form>
+<h3 style="margin:20px 0 8px;font-size:14px">API Token</h3>
+<p style="margin:0 0 10px;color:var(--mut)">Read-only bearer token for
+/metrics and /api/v1/* — send as <code>Authorization: Bearer</code>.</p>
+<table class="kv"><tr><td class="lbl">Token</td><td>%s</td></tr></table>
+<div style="margin-top:12px">
+<form method="post" action="/about/update/token" style="display:inline"
+ onsubmit="return confirm('%s')">%s
+<input type="hidden" name="act" value="generate">
+<button class="btn sec" type="submit">%s</button></form>
+%s</div></div></div>
 <div class="card"><h3>Network Management Card</h3><div class="pad">
 <table class="kv">%s</table></div></div>
 <div class="card"><h3>Attached UPS</h3><div class="pad">
-<table class="kv">%s</table></div></div>""" % (m, upd, csrf_input(d),
-                                              csrf_input(d), rollbtn,
-                                              rows, dev)
+<table class="kv">%s</table></div></div>""" % (
+        m, upd, csrf_input(d), csrf_input(d), rollbtn,
+        esc(cfg("update", "repo", "ArMaTeC/apcupspi")),
+        esc(cfg("update", "branch", "main")),
+        sel(cfg("update", "channel", "releases"), "releases", "branch"),
+        sel(cfg("update", "verify", "checksum"), "checksum", "strict", "0"),
+        " checked" if cfg("update", "autocheck", "1") != "0" else "",
+        csrf_input(d),
+        tokdisp,
+        ("Replace the existing API token? Clients using it lose access."
+         if utok else "Generate a new API token?"),
+        csrf_input(d),
+        "Regenerate" if utok else "Generate",
+        tokclear,
+        rows, dev)
 
 
 def pg_update_apply():
@@ -2928,6 +3021,48 @@ def _load_json(path):
         return {}
 
 
+def do_update_settings(form):
+    """Persist the [update] options from the Update Settings card into
+    nmc.conf — the updater reads them from the file directly."""
+    def v(k):
+        return form.get(k, [""])[0].strip()
+    errs = []
+    if v("urepo") and not re.fullmatch(
+            r"[A-Za-z0-9_.\-]+/[A-Za-z0-9_.\-]+", v("urepo")):
+        errs.append("repository must look like owner/name")
+    if v("ubranch") and not re.fullmatch(
+            r"[A-Za-z0-9._/\-]{1,64}", v("ubranch")):
+        errs.append("invalid branch name")
+    if v("uchannel") not in ("releases", "branch"):
+        errs.append("invalid channel")
+    if v("uverify") not in ("checksum", "strict", "0"):
+        errs.append("invalid verify mode")
+    if errs:
+        return ("msg-err", "; ".join(errs))
+    for key, val in (("repo", v("urepo")), ("branch", v("ubranch")),
+                     ("channel", v("uchannel")), ("verify", v("uverify")),
+                     ("autocheck",
+                      "1" if form.get("uautocheck") else "0")):
+        conf_set("update", key, val)
+    log_event("NMC: Update settings changed by %s." % WEB_USER)
+    return ("msg-ok", "Update settings saved.")
+
+
+def do_update_token(form):
+    """Generate/clear the [web] api_token used by monitoring clients."""
+    act = form.get("act", [""])[0]
+    if act == "generate":
+        tok = secrets.token_urlsafe(24)
+        conf_set("web", "api_token", tok)
+        log_event("NMC: API token generated by %s." % WEB_USER)
+        return ("msg-ok", "API token generated.")
+    if act == "clear":
+        conf_set("web", "api_token", "")
+        log_event("NMC: API token cleared by %s." % WEB_USER)
+        return ("msg-ok", "API token cleared.")
+    return ("msg-err", "Unknown action.")
+
+
 def update_backups(state_dir="/var/lib/apc-nmc"):
     """Newest-first list of (dir, restored_version, epoch) for
     update-backup-* dirs — the rollback points --rollback restores."""
@@ -3259,7 +3394,8 @@ class H(BaseHTTPRequestHandler):
     def _api_ok(self):
         """Machine auth for monitoring endpoints: Authorization: Bearer
         <token> (or ?api_token=) matching [web] api_token in nmc.conf."""
-        if not API_TOKEN:
+        token = cfg("web", "api_token", "")   # live read — settable in UI
+        if not token:
             return False
         auth = self.headers.get("Authorization", "")
         if auth.lower().startswith("bearer "):
@@ -3267,7 +3403,7 @@ class H(BaseHTTPRequestHandler):
         else:
             tok = parse_qs(urlparse(self.path).query
                            ).get("api_token", [""])[0]
-        return bool(tok) and secrets.compare_digest(tok, API_TOKEN)
+        return bool(tok) and secrets.compare_digest(tok, token)
 
     def _send(self, code, body: "bytes | str" = b"",
               ctype="text/html", extra=None):
@@ -3765,6 +3901,22 @@ class H(BaseHTTPRequestHandler):
             except Exception:
                 traceback.print_exc()
                 res = ("msg-err", "Update check failed")
+            return self._redir("/about/system?r=%s&why=%s" % (
+                "ok" if res[0] == "msg-ok" else "err", quote(res[1])))
+        if p == "/about/update/settings":
+            try:
+                res = do_update_settings(f)
+            except Exception:
+                traceback.print_exc()
+                res = ("msg-err", "Settings could not be saved")
+            return self._redir("/about/system?r=%s&why=%s" % (
+                "ok" if res[0] == "msg-ok" else "err", quote(res[1])))
+        if p == "/about/update/token":
+            try:
+                res = do_update_token(f)
+            except Exception:
+                traceback.print_exc()
+                res = ("msg-err", "Token operation failed")
             return self._redir("/about/system?r=%s&why=%s" % (
                 "ok" if res[0] == "msg-ok" else "err", quote(res[1])))
         if p == "/about/update/apply":

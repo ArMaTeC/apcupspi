@@ -77,6 +77,22 @@ def test_config_new_keys(tmp_path):
         "web.api_token", "update.verify"]
 
 
+def test_conf_set(tmp_path):
+    conf = tmp_path / "nmc.conf"
+    conf.write_text("[update]\nrepo = a/b\n#verify = off\n\n[web]\nuser = apc\n")
+    web.CONF = str(conf)
+    web.conf_set("update", "verify", "strict")     # replaces commented key
+    web.conf_set("update", "channel", "branch")    # appends into section
+    web.conf_set("web", "api_token", "tok123")     # appends into section
+    web.conf_set("newsec", "k", "v")               # creates new section
+    t = conf.read_text()
+    assert "verify = strict" in t and "#verify" not in t
+    assert "channel = branch" in t
+    assert "[web]\nuser = apc\napi_token = tok123" in t
+    assert "[newsec]\nk = v" in t
+    assert "repo = a/b" in t          # untouched
+
+
 def test_jstr_roundtrip(tmp_path):
     """The bash jstr() must produce valid JSON string content."""
     fn = subprocess.run(
