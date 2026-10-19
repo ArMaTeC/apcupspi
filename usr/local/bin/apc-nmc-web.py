@@ -17,6 +17,7 @@ import hashlib
 import html
 import io
 import itertools
+import glob
 import json
 import os
 import re
@@ -71,6 +72,7 @@ UPSD_PASS = cfg("upsd", "password", "")
 
 WEB_USER = cfg("web", "user", "apc")
 WEB_PASS = cfg("web", "password", "apc")
+API_TOKEN = cfg("web", "api_token", "")   # bearer token for /metrics + /api/v1
 LOCATION = cfg("device", "location", "Server Room")
 CONTACT = cfg("device", "contact", "admin@localhost")
 NMC_MODEL = "AP9631"
@@ -2272,6 +2274,10 @@ def pg_about(d, msg: "str | tuple" = ""):
         ("Latest Version", esc(us.get("latest") or "?")),
         ("Last Check", checked),
         ("Update Available", avail)])
+    if us.get("available") and us.get("notes"):
+        upd += kv("Release Notes",
+                  '<pre class="updnotes">%s</pre>'
+                  % esc("\n".join(us["notes"].splitlines()[:24])))
     if uss.get("state") == "running":
         upd += kv("Update Status", '<span class="st-warn">in progress: %s</span>'
                   % esc(uss.get("msg", "")))
@@ -2283,6 +2289,22 @@ def pg_about(d, msg: "str | tuple" = ""):
                   % (time.strftime("%m/%d/%Y %H:%M",
                                    time.localtime(fin)) if fin else "done",
                      uss.get("to", "?"))))
+    baks = update_backups()
+    rollbtn = ""
+    if baks:
+        upd += kv("Backups", esc("; ".join(
+            "%s (%s)" % (b[1], time.strftime("%m/%d %H:%M",
+                                            time.localtime(b[2])) if b[2]
+                         else "?") for b in baks)))
+        rollbtn = ("""<form method="post" action="/about/update/rollback"
+ style="display:inline" onsubmit="return confirm('Restore the most recent update backup? Services (including this interface) restart during rollback.')">"""
+                   + csrf_input(d) +
+                   '<button class="btn sec" type="submit">Roll Back</button></form>')
+    newkeys = config_new_keys()
+    if newkeys:
+        upd += kv("New Config Options",
+                  '<span class="st-warn">%s</span> &mdash; unset in '
+                  'nmc.conf' % esc(", ".join(newkeys)))
     return """<h1 class="page">About</h1>%s
 <div class="card"><h3>Software Update</h3><div class="pad">
 <table class="kv">%s</table>
@@ -2290,12 +2312,14 @@ def pg_about(d, msg: "str | tuple" = ""):
 <button class="btn sec" type="submit">Check for Updates</button></form>
 <form method="post" action="/about/update/apply" style="display:inline"
  onsubmit="return confirm('Download and install the latest version now? Services (including this interface) restart during the update.')">
-%s<button class="btn sec" type="submit">Update Now</button></form></div></div>
+%s<button class="btn sec" type="submit">Update Now</button></form>
+%s</div></div>
 <div class="card"><h3>Network Management Card</h3><div class="pad">
 <table class="kv">%s</table></div></div>
 <div class="card"><h3>Attached UPS</h3><div class="pad">
 <table class="kv">%s</table></div></div>""" % (m, upd, csrf_input(d),
-                                              csrf_input(d), rows, dev)
+                                              csrf_input(d), rollbtn,
+                                              rows, dev)
 
 
 def pg_update_apply():
@@ -2904,6 +2928,39 @@ def _load_json(path):
         return {}
 
 
+def update_backups(state_dir="/var/lib/apc-nmc"):
+    """Newest-first list of (dir, restored_version, epoch) for
+    update-backup-* dirs — the rollback points --rollback restores."""
+    out = []
+    for d in sorted(glob.glob(
+            os.path.join(state_dir, "update-backup-*")), reverse=True):
+        if not os.path.isdir(d):
+            continue
+        try:
+            meta = open(os.path.join(d, "meta")).read().split()
+            ver = meta[0] if meta else "?"
+            ts = int(meta[2]) if len(meta) > 2 else 0
+        except (OSError, ValueError, IndexError):
+            ver, ts = "?", 0
+        out.append((d, ver, ts))
+    # newest first — mirrors --rollback's ls -dt pick, using meta ts
+    out.sort(key=lambda b: (b[2], b[0]), reverse=True)
+    return out
+
+
+def config_new_keys(default="/etc/apc-nmc/nmc.conf.default", live=None):
+    """section.key names in nmc.conf.default that are unset (or only
+    commented) in the live nmc.conf — options updates have shipped that
+    the admin may want to review. Never exposes values."""
+    cp_new = configparser.ConfigParser()
+    cp_new.read(default)
+    cp_live = configparser.ConfigParser()
+    cp_live.read(CONF if live is None else live)
+    return ["%s.%s" % (s, k) for s in cp_new.sections()
+            for k in cp_new.options(s)
+            if not (cp_live.has_section(s) and k in cp_live.options(s))]
+
+
 def do_update_check():
     """Run the check through apc-nmc-update.sh so UI and CLI share one
     implementation (and one cache file the About page reads)."""
@@ -3199,6 +3256,19 @@ class H(BaseHTTPRequestHandler):
         tok = self._token()
         return get_session(tok) if tok else None
 
+    def _api_ok(self):
+        """Machine auth for monitoring endpoints: Authorization: Bearer
+        <token> (or ?api_token=) matching [web] api_token in nmc.conf."""
+        if not API_TOKEN:
+            return False
+        auth = self.headers.get("Authorization", "")
+        if auth.lower().startswith("bearer "):
+            tok = auth[7:].strip()
+        else:
+            tok = parse_qs(urlparse(self.path).query
+                           ).get("api_token", [""])[0]
+        return bool(tok) and secrets.compare_digest(tok, API_TOKEN)
+
     def _send(self, code, body: "bytes | str" = b"",
               ctype="text/html", extra=None):
         if isinstance(body, str):
@@ -3315,7 +3385,8 @@ class H(BaseHTTPRequestHandler):
         if p == "/healthz":
             return self._send(200, "ok\n", "text/plain")
         if p == "/metrics":
-            if not (self._peer().startswith("127.") or self._sess()):
+            if not (self._peer().startswith("127.") or self._sess()
+                    or self._api_ok()):
                 return self._send(403, "metrics is localhost-only\n",
                                   "text/plain")
             return self._send(200, metrics_txt(self._vars_for_js()),
@@ -3345,6 +3416,16 @@ class H(BaseHTTPRequestHandler):
                                           "HttpOnly; Secure; SameSite=Lax"})
         sess = self._sess()
         if not sess:
+            # read-only API endpoints accept the [web] api_token instead
+            if p == "/api/v1/vars" and self._api_ok():
+                return self._send(200, json.dumps(self._vars_for_js()),
+                                  "application/json")
+            if p == "/api/v1/commands" and self._api_ok():
+                try:
+                    cmds = ups_cmds()
+                except Exception:
+                    cmds = []
+                return self._send(200, json.dumps(cmds), "application/json")
             return self._redir("/login?next=" + quote(p))
         if p == "/datalog.json":
             return self._send(200, json.dumps(load_data()),
@@ -3695,6 +3776,19 @@ class H(BaseHTTPRequestHandler):
             if res[0] != "msg-ok":
                 return self._redir("/about/system?r=err&why=" + quote(res[1]))
             log_event("NMC: Software update started by %s." % WEB_USER)
+            return self._send(200, page("APC UPS", pg_update_apply(), d,
+                                        "/about/system", "About", "System"),
+                              extra={"Cache-Control": "no-store"})
+        if p == "/about/update/rollback":
+            try:
+                subprocess.run(
+                    ["systemctl", "start", "--no-block",
+                     "apc-nmc-update-rollback.service"],
+                    check=False, capture_output=True, timeout=15)
+            except Exception:
+                return self._redir("/about/system?r=err&why=" +
+                                   quote("Rollback could not be started"))
+            log_event("NMC: Software rollback started by %s." % WEB_USER)
             return self._send(200, page("APC UPS", pg_update_apply(), d,
                                         "/about/system", "About", "System"),
                               extra={"Cache-Control": "no-store"})

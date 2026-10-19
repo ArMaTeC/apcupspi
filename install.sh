@@ -168,18 +168,25 @@ if ls "$SRC"/vendor/nut-2.8.5-src.tar.gz >/dev/null 2>&1 \
     build_nut_driver && NUT_BUILT=1 || echo "!! falling back to shipped binaries"
 fi
 if [ $NUT_BUILT -eq 0 ]; then
-    if [ -f "$SRC/usr/lib/nut/apc_modbus" ]; then
+    # The shipped binaries are aarch64 ELF — installing them on a 32-bit
+    # (armv7l) or non-ARM OS would just produce a driver that can't exec.
+    # Those platforms must build from source, handled above.
+    if [ "$(uname -m)" != "aarch64" ]; then
+        echo "!! shipped apc_modbus/libmodbus are aarch64-only — this system"
+        echo "   is $(uname -m); install build tools and the vendor sources"
+        echo "   so the driver can be compiled instead"
+    elif [ -f "$SRC/usr/lib/nut/apc_modbus" ]; then
         put usr/lib/nut/apc_modbus 0755
+        if ls "$SRC"/usr/local/lib/libmodbus.so.5* >/dev/null 2>&1; then
+            put usr/local/lib/libmodbus.so.5 0644
+            put usr/local/lib/libmodbus.so.5.1.0 0644
+            ln -sf libmodbus.so.5.1.0 /usr/local/lib/libmodbus.so.5
+            ln -sf libmodbus.so.5 /usr/local/lib/libmodbus.so
+        fi
+        ldconfig 2>/dev/null || true
     else
         echo "!! no apc_modbus driver available (no source, no binary)"
     fi
-    if ls "$SRC"/usr/local/lib/libmodbus.so.5* >/dev/null 2>&1; then
-        put usr/local/lib/libmodbus.so.5 0644
-        put usr/local/lib/libmodbus.so.5.1.0 0644
-        ln -sf libmodbus.so.5.1.0 /usr/local/lib/libmodbus.so.5
-        ln -sf libmodbus.so.5 /usr/local/lib/libmodbus.so
-    fi
-    ldconfig 2>/dev/null || true
 fi
 # The driver is built with custom paths — bridge them to the Debian layout:
 #   sysconfdir=/usr/local/ups/etc  and  statepath=/var/state/ups
@@ -190,6 +197,9 @@ ln -sfn /run/nut /var/state/ups
 # --------------------------------------------------------------- deploy conf
 echo ">> Installing configuration files..."
 put etc/apc-nmc/nmc.conf.default 0644
+# update-signing.pub is the maintainer's release-signing public key —
+# ship it only if present; the updater signature-checks payloads then
+put etc/apc-nmc/update-signing.pub 0644 2>/dev/null || true
 put etc/apc-nmc/ca 2>/dev/null || true
 put etc/nut/nut.conf 0644
 put etc/nut/ups.conf 0644
@@ -206,6 +216,7 @@ put etc/systemd/system/apc-nmc-web.service.d 2>/dev/null || true
 put etc/systemd/system/net-watchdog.service 0644
 put etc/systemd/system/net-watchdog.timer 0644
 put etc/systemd/system/apc-nmc-update.service 0644
+put etc/systemd/system/apc-nmc-update-rollback.service 0644
 put etc/systemd/system/apc-nmc-update-check.service 0644
 put etc/systemd/system/apc-nmc-update-check.timer 0644
 put etc/systemd/system/firstboot-wizard.service 0644

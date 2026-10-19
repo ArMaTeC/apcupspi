@@ -308,6 +308,18 @@ body {
 
 /* live update console on the Software Update apply page — a dark
    terminal panel in either theme */
+/* release-notes excerpt in the Software Update card */
+.updnotes {
+  font: inherit;
+  font-size: 12px;
+  color: var(--ink);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 180px;
+  overflow-y: auto;
+  margin: 0
+}
+
 .updcon {
   background: #0d1117;
   color: #c9d1d9;

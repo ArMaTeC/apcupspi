@@ -11,6 +11,9 @@
 #                  the vendored NUT sources like install.sh, falling back
 #                  to the shipped binary) over the running system — never
 #                  user config or secrets — then restart only what changed
+#   --rollback     restore the newest update-backup-* over the running
+#                  system (files, driver, units — never secrets), then
+#                  restart the affected services
 #   --status       print the cached check/apply state
 #
 # apc-nmc-update-check.timer runs --check-auto daily. --apply runs under
@@ -47,11 +50,42 @@ conf() {  # conf <section> <key> — print value, empty if absent
 
 REPO=$(conf update repo);       REPO=${REPO:-ArMaTeC/apcupspi}
 BRANCH=$(conf update branch);   BRANCH=${BRANCH:-main}
+CHANNEL=$(conf update channel); CHANNEL=${CHANNEL:-releases}
+VERIFY=$(conf update verify);   VERIFY=${VERIFY:-checksum}
 BASE=${APC_NMC_UPDATE_URL:-https://raw.githubusercontent.com/$REPO/$BRANCH}
 TARBALL=${APC_NMC_UPDATE_TARBALL:-https://github.com/$REPO/archive/refs/heads/$BRANCH.tar.gz}
+RELEASES_API="https://api.github.com/repos/$REPO/releases/latest"
+PUBKEY=/etc/apc-nmc/update-signing.pub
 
 jstr() {  # JSON-escape a string's content (no surrounding quotes added)
-    printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g; s/	/\\t/g'
+    python3 -c 'import json,sys; print(json.dumps(sys.stdin.read())[1:-1], end="")'
+}
+
+rel_json() {  # print the latest-release JSON, empty on failure
+    curl -fsSL --max-time 15 -H "Accept: application/vnd.github+json" \
+        "$RELEASES_API" 2>/dev/null
+}
+
+rel_field() {  # rel_field <json-file> <key>
+    python3 - "$1" "$2" <<'PY'
+import json, sys
+try:
+    v = json.load(open(sys.argv[1])).get(sys.argv[2], "")
+    print(v if isinstance(v, str) else "")
+except Exception:
+    pass
+PY
+}
+
+rel_assets() {  # rel_assets <json-file> — "name url" per asset
+    python3 - "$1" <<'PY'
+import json, sys
+try:
+    for a in json.load(open(sys.argv[1])).get("assets", []):
+        print(a.get("name", ""), a.get("browser_download_url", ""))
+except Exception:
+    pass
+PY
 }
 
 write_json() {  # write_json <path> <content>
@@ -87,15 +121,27 @@ do_check() {
     now=$(date +%s)
     installed=$(tr -d '[:space:]' < "$VERSION_FILE" 2>/dev/null)
     installed=${installed:-unknown}
-    latest=$(curl -fsSL --max-time 15 "$BASE/VERSION" 2>/dev/null \
-             | tr -d '[:space:]')
+    latest=""; tag=""; notes=""
+    if [ "$CHANNEL" = releases ]; then
+        rel=$(mktemp /tmp/apc-nmc-rel.XXXXXX) || rel=""
+        if [ -n "$rel" ] && rel_json > "$rel" && [ -s "$rel" ]; then
+            tag=$(rel_field "$rel" tag_name | tr -d '[:space:]')
+            notes=$(rel_field "$rel" body | head -c 4096)
+            latest=${tag#v}
+        fi
+        [ -n "$rel" ] && rm -f "$rel"
+    fi
+    if [ -z "$latest" ]; then     # no releases yet / channel=branch
+        latest=$(curl -fsSL --max-time 15 "$BASE/VERSION" 2>/dev/null \
+                 | tr -d '[:space:]')
+    fi
     if [ -z "$latest" ]; then
         write_json "$STATE" "{\"installed\":\"$(jstr "$installed")\",\"latest\":\"\",\"available\":null,\"checked_at\":$now,\"err\":\"no VERSION from update server\"}"
-        say "check failed: no VERSION from $BASE"
+        say "check failed: no VERSION from update server"
         exit 1
     fi
     if ver_newer "$installed" "$latest"; then avail=true; else avail=false; fi
-    write_json "$STATE" "{\"installed\":\"$(jstr "$installed")\",\"latest\":\"$(jstr "$latest")\",\"available\":$avail,\"checked_at\":$now,\"err\":\"\"}"
+    write_json "$STATE" "{\"installed\":\"$(jstr "$installed")\",\"latest\":\"$(jstr "$latest")\",\"tag\":\"$(jstr "$tag")\",\"notes\":\"$(jstr "$notes")\",\"available\":$avail,\"checked_at\":$now,\"err\":\"\"}"
     echo "installed=$installed latest=$latest available=$avail"
 }
 
@@ -114,6 +160,10 @@ sync_dir() {  # sync_dir <payload-rel-path> <abs-target>
     local s="$SRC$1"
     [ -d "$s" ] || return 0
     mkdir -p "$2"
+    # keep a copy of the pre-sync tree so --rollback can restore it
+    if [ -n "$(ls -A "$2" 2>/dev/null)" ]; then
+        mkdir -p "$BAK$2" && cp -a "$2/." "$BAK$2/"
+    fi
     cp -a "$s/." "$2/" && say "  synced $2"
 }
 
@@ -126,12 +176,80 @@ do_apply() {
     say "=== update started (installed: $FROM) ==="
 
     work=$(mktemp -d /tmp/apc-nmc-update.XXXXXX) || { status failed "no temp dir"; exit 1; }
+    # deliberate early expansion: a local var would be unbound by the time
+    # the EXIT trap fires under set -u
+    # shellcheck disable=SC2064
     trap "rm -rf '$work' ${_NMC_UPD_SELF:-}" EXIT
 
-    if ! curl -fsSL --max-time 120 -o "$work/src.tgz" "$TARBALL" \
-            || ! tar -xzf "$work/src.tgz" -C "$work"; then
-        status failed "download/extract failed"
-        say "FAIL: could not fetch $TARBALL"
+    # Resolve the payload URL: an explicit env override wins; otherwise a
+    # release asset when the tracked repo publishes one, then the tag
+    # archive, then the tracked-branch archive (forks without releases).
+    TARBALL_URL=$TARBALL; SHA_URL=""; SIG_URL=""
+    if [ -z "${APC_NMC_UPDATE_TARBALL:-}" ] && [ "$CHANNEL" = releases ]; then
+        rel=$(mktemp /tmp/apc-nmc-rel.XXXXXX); rel_json > "$rel" || true
+        rtag=$(rel_field "$rel" tag_name | tr -d '[:space:]')
+        if [ -n "$rtag" ]; then
+            a_tar=""; a_sha=""; a_sig=""
+            while read -r an au; do
+                case "$an" in
+                    *.tar.gz.sha256|SHA256SUMS*) a_sha=$au ;;
+                    *.sig)                       a_sig=$au ;;
+                    *.tar.gz)                    a_tar=$au ;;
+                esac
+            done <<EOF
+$(rel_assets "$rel")
+EOF
+            if [ -n "$a_tar" ]; then
+                TARBALL_URL=$a_tar; SHA_URL=$a_sha; SIG_URL=$a_sig
+            else
+                TARBALL_URL="https://github.com/$REPO/archive/refs/tags/$rtag.tar.gz"
+            fi
+        fi
+        rm -f "$rel"
+    fi
+
+    status running "downloading update"
+    if ! curl -fsSL --max-time 120 -o "$work/src.tgz" "$TARBALL_URL"; then
+        status failed "download failed"
+        say "FAIL: could not fetch $TARBALL_URL"
+        exit 1
+    fi
+    # integrity: verify the payload against the release's sha256 asset
+    # when one is published. verify=strict refuses to run unverified.
+    if [ -n "$SHA_URL" ] \
+            && curl -fsSL --max-time 30 -o "$work/src.sha256" "$SHA_URL" \
+            && [ -s "$work/src.sha256" ]; then
+        exp=$(awk '{print $1; exit}' "$work/src.sha256")
+        act=$(sha256sum "$work/src.tgz" | awk '{print $1}')
+        if [ "$exp" != "$act" ]; then
+            status failed "checksum mismatch"
+            say "FAIL: payload checksum mismatch"
+            exit 1
+        fi
+        say "  verified payload sha256"
+    elif [ "$VERIFY" = strict ]; then
+        status failed "no checksum available"
+        say "FAIL: release provides no checksum (verify=strict)"
+        exit 1
+    else
+        say "WARN: payload not checksum-verified"
+    fi
+    # signature: checked whenever a pubkey is installed and the release
+    # carries a .sig — a bad signature always fails hard
+    if [ -f "$PUBKEY" ] && [ -n "$SIG_URL" ]; then
+        if ! curl -fsSL --max-time 30 -o "$work/src.sig" "$SIG_URL" \
+                || ! openssl dgst -sha256 -verify "$PUBKEY" \
+                    -signature "$work/src.sig" "$work/src.tgz" \
+                    >/dev/null 2>&1; then
+            status failed "signature check failed"
+            say "FAIL: payload signature verification failed"
+            exit 1
+        fi
+        say "  verified payload signature"
+    fi
+    if ! tar -xzf "$work/src.tgz" -C "$work"; then
+        status failed "extract failed"
+        say "FAIL: could not extract payload"
         exit 1
     fi
     SRC=$(echo "$work"/*/); [ -d "$SRC" ] || SRC="$work/"
@@ -144,6 +262,7 @@ do_apply() {
 
     BAK=$STATE_DIR/update-backup-$(date +%Y%m%d-%H%M%S)
     mkdir -p "$BAK"
+    printf '%s\n%s\n%s\n' "$FROM" "$TO" "$(date +%s)" > "$BAK/meta"
     CHANGED=""
 
     status running "deploying files"
@@ -218,7 +337,15 @@ do_apply() {
             fi
         fi
     fi
-    [ -n "$DRV_NEW" ] || DRV_NEW="${SRC}usr/lib/nut/apc_modbus"
+    # shipped fallback binaries are aarch64-only — a rebuild is the only
+    # correct source on other architectures
+    if [ -z "$DRV_NEW" ]; then
+        if [ "$(uname -m)" = "aarch64" ]; then
+            DRV_NEW="${SRC}usr/lib/nut/apc_modbus"
+        else
+            say "WARN: shipped apc_modbus is aarch64-only — keeping installed driver"
+        fi
+    fi
     if [ -n "$DRV_NEW" ]; then
         install -s -m 0755 "$DRV_NEW" "$work/apc_modbus.strip" 2>/dev/null
         if [ -s "$work/apc_modbus.strip" ] \
@@ -234,7 +361,7 @@ do_apply() {
     # shipped libmodbus is only the fallback — a source build already
     # installed the fresh library above. cp -a keeps .so symlinks as
     # links (install would dereference them into duplicate files).
-    if [ "$LIBMB_BUILT" = 0 ]; then
+    if [ "$LIBMB_BUILT" = 0 ] && [ "$(uname -m)" = "aarch64" ]; then
         for l in "$SRC"usr/local/lib/libmodbus.so*; do
             [ -e "$l" ] || continue
             t="/${l#"$SRC"}"
@@ -280,6 +407,43 @@ do_apply() {
     systemctl restart apc-nmc-web 2>/dev/null || true
 }
 
+do_rollback() {
+    exec 9>"$LOCK"; flock -n 9 || { say "update/rollback already running"; exit 0; }
+    local BAK rel
+    BAK=$(ls -1dt "$STATE_DIR"/update-backup-* 2>/dev/null | head -1)
+    if [ -z "$BAK" ] || [ ! -d "$BAK" ]; then
+        FROM=""; TO=""
+        status failed "no backup to roll back to"
+        say "rollback: no update backups found"
+        exit 1
+    fi
+    FROM=$(tr -d '[:space:]' < "$VERSION_FILE" 2>/dev/null); FROM=${FROM:-unknown}
+    TO=$(sed -n '1p' "$BAK/meta" 2>/dev/null); TO=${TO:-?}
+    status running "rolling back to $TO"
+    say "=== rollback started (installed: $FROM, backup: $(basename "$BAK")) ==="
+
+    # every file under the backup mirror maps back to its absolute path;
+    # the driver is stored under its flattened name
+    find "$BAK" -type f ! -name meta | sort | while read -r f; do
+        rel=${f#"$BAK"}
+        [ "$rel" = "/usr-lib-nut-apc_modbus" ] && rel=/usr/lib/nut/apc_modbus
+        mkdir -p "$(dirname "$rel")"
+        cp -a "$f" "$rel" && say "  restored $rel"
+    done
+
+    chgrp -R nut /etc/nut 2>/dev/null || true
+    ldconfig 2>/dev/null || true
+    systemctl daemon-reload
+    systemctl restart snmpd 2>/dev/null || true
+    systemctl restart 'nut-driver@*.service' 2>/dev/null \
+        || systemctl restart nut-driver.target 2>/dev/null || true
+
+    write_json "$STATE" "{\"installed\":\"$(jstr "$TO")\",\"latest\":\"$(jstr "$TO")\",\"available\":false,\"checked_at\":$(date +%s),\"err\":\"\"}"
+    status ok "rolled back to $TO"
+    say "=== rollback to $TO complete ==="
+    systemctl restart apc-nmc-web 2>/dev/null || true
+}
+
 case "${1:-}" in
     --check)      do_check ;;
     --check-auto) [ "$(conf update autocheck)" = "0" ] && exit 0; do_check ;;
@@ -292,9 +456,10 @@ case "${1:-}" in
             _NMC_UPD_REEXEC=1 _NMC_UPD_SELF="$_t" exec bash "$_t" "$@"
         fi
         do_apply ;;
+    --rollback)   do_rollback ;;
     --status)
         [ -f "$STATE" ] && cat "$STATE"
         [ -f "$STATUS" ] && cat "$STATUS" ;;
-    *)  echo "usage: $0 --check | --check-auto | --apply | --status" >&2
+    *)  echo "usage: $0 --check | --check-auto | --apply | --rollback | --status" >&2
         exit 2 ;;
 esac

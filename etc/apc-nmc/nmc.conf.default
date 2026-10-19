@@ -45,6 +45,12 @@ hook =
 # [users]
 # readonly = examplepass
 
+[web]
+# read-only bearer token for monitoring endpoints (Nagios, Prometheus
+# scrapes of /metrics, /api/v1/vars, /api/v1/commands). Send as
+# "Authorization: Bearer <token>". Empty = API auth disabled.
+api_token =
+
 [schedule]
 # weekly self-test: weekday 0-6 (Mon-Sun) + hour 0-23; empty = disabled
 selftest_weekday =
@@ -52,9 +58,17 @@ selftest_hour =
 
 [update]
 # Software updates for this card (About > System > Check for updates).
-# The updater pulls the repo install.sh was fetched from.
+# The updater pulls from the repo install.sh was fetched from.
 repo = ArMaTeC/apcupspi
 branch = main
+# channel = releases  -> update from the newest GitHub release/tag,
+#                        falling back to the branch when none exist
+# channel = branch    -> track branch head (VERSION file) directly
+channel = releases
+# verify = checksum -> verify the release's sha256 asset when present
+# verify = strict   -> refuse to apply an update with no checksum
+# verify = 0        -> never verify
+verify = checksum
 # daily background check via apc-nmc-update-check.timer; 0 disables it
 # (manual checks and updates still work)
 autocheck = 1

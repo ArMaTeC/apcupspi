@@ -1,0 +1,11 @@
+[Unit]
+Description=APC NMC software update (rollback)
+
+# Started on demand by the web UI (systemctl --no-block) or by hand.
+# Restores the newest update-backup-* tree and restarts affected
+# services, including the web interface, so it must be able to write
+# /usr and /etc.
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/apc-nmc-update.sh --rollback
+TimeoutStartSec=120
