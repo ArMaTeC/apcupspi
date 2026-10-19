@@ -14,6 +14,8 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    env:
+      UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
     steps:
       - uses: actions/checkout@v4
 
@@ -29,9 +31,7 @@ jobs:
           ls -l "apcupspi-$V.tar.gz"*
 
       - name: Sign payload (optional)
-        if: ${{ secrets.UPDATE_SIGNING_KEY != '' }}
-        env:
-          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+        if: ${{ env.UPDATE_SIGNING_KEY != '' }}
         run: |
           set -e
           V=${GITHUB_REF_NAME#v}

@@ -12,6 +12,8 @@ UPD = os.path.join(ROOT, "usr/local/sbin/apc-nmc-update.sh")
 
 def _web():
     spec = importlib.util.spec_from_file_location("nmcweb", WEB)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("cannot load %s" % WEB)
     m = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(m)
     return m
@@ -80,7 +82,7 @@ def test_config_new_keys(tmp_path):
 def test_conf_set(tmp_path):
     conf = tmp_path / "nmc.conf"
     conf.write_text("[update]\nrepo = a/b\n#verify = off\n\n[web]\nuser = apc\n")
-    web.CONF = str(conf)
+    setattr(web, "CONF", str(conf))
     web.conf_set("update", "verify", "strict")     # replaces commented key
     web.conf_set("update", "channel", "branch")    # appends into section
     web.conf_set("web", "api_token", "tok123")     # appends into section
