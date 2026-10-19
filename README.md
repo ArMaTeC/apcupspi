@@ -228,7 +228,7 @@ The repo mirrors filesystem layout — files land exactly where they sit:
 install.sh                  installer (payload = this repo)
 ├── docs/img/               README screenshots
 ├── usr/local/bin/          apc-nmc-web.py · apc-nmc-agent.py · web UI assets
-├── usr/local/sbin/         firstboot-wizard.sh · net-watchdog.sh · nut-usb-detect.sh
+├── usr/local/sbin/         apc-nmc-update.sh · firstboot-wizard.sh · watchdog/backup tools
 ├── usr/lib/nut/apc_modbus  fallback prebuilt NUT driver (arm64)
 ├── usr/local/lib/          fallback libmodbus.so.5 (runtime dep of apc_modbus)
 ├── vendor/                 NUT 2.8.5 + NUT libmodbus fork sources (built on target)

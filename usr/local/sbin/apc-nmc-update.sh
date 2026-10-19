@@ -120,7 +120,7 @@ do_apply() {
     say "=== update started (installed: $FROM) ==="
 
     work=$(mktemp -d /tmp/apc-nmc-update.XXXXXX) || { status failed "no temp dir"; exit 1; }
-    trap 'rm -rf "$work"' EXIT
+    trap "rm -rf '$work' ${_NMC_UPD_SELF:-}" EXIT
 
     if ! curl -fsSL --max-time 120 -o "$work/src.tgz" "$TARBALL" \
             || ! tar -xzf "$work/src.tgz" -C "$work"; then
@@ -229,7 +229,7 @@ case "${1:-}" in
         if [ -z "${_NMC_UPD_REEXEC:-}" ]; then
             _t=$(mktemp /tmp/apc-nmc-update-self.XXXXXX)
             cp "$0" "$_t" && chmod +x "$_t" || exit 1
-            _NMC_UPD_REEXEC=1 exec bash "$_t" "$@"
+            _NMC_UPD_REEXEC=1 _NMC_UPD_SELF="$_t" exec bash "$_t" "$@"
         fi
         do_apply ;;
     --status)
