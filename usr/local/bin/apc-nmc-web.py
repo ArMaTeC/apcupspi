@@ -2413,6 +2413,10 @@ def pg_about(d, msg: "str | tuple" = ""):
                   % (time.strftime("%m/%d/%Y %H:%M",
                                    time.localtime(fin)) if fin else "done",
                      uss.get("to", "?"))))
+    # the update action buttons stay off while a run is queued/live —
+    # the POSTs are refused too, this just keeps the UI honest
+    dis = (' disabled title="an update is in progress"'
+           if uss.get("state") in ("queued", "running") else "")
     baks = update_backups()
     rollbtn = ""
     if baks:
@@ -2423,7 +2427,8 @@ def pg_about(d, msg: "str | tuple" = ""):
         rollbtn = ("""<form method="post" action="/about/update/rollback"
  style="display:inline" onsubmit="return confirm('Restore the most recent update backup? Services (including this interface) restart during rollback.')">"""
                    + csrf_input(d) +
-                   '<button class="btn sec" type="submit">Roll Back</button></form>')
+                   '<button class="btn sec" type="submit"%s>Roll Back'
+                   '</button></form>' % dis)
     newkeys = config_new_keys()
     if newkeys:
         upd += kv("New Config Options",
@@ -2447,10 +2452,10 @@ def pg_about(d, msg: "str | tuple" = ""):
 <div class="card"><h3>Software Update</h3><div class="pad">
 <table class="kv">%s</table>
 <form method="post" action="/about/update/check" style="display:inline">%s
-<button class="btn sec" type="submit">Check for Updates</button></form>
+<button class="btn sec" type="submit"%s>Check for Updates</button></form>
 <form method="post" action="/about/update/apply" style="display:inline"
  onsubmit="return confirm('Download and install the latest version now? Services (including this interface) restart during the update.')">
-%s<button class="btn sec" type="submit">Update Now</button></form>
+%s<button class="btn sec" type="submit"%s>Update Now</button></form>
 %s</div></div>
 <div class="card"><h3>Update Settings</h3><div class="pad">
 <form method="post" action="/about/update/settings"><table class="kv">
@@ -2464,7 +2469,7 @@ def pg_about(d, msg: "str | tuple" = ""):
  <input type="checkbox" name="uautocheck" value="1"%s></td></tr>
 </table>
 <div style="margin-top:14px">%s
-<button class="btn sec" type="submit">Save Settings</button></div>
+<button class="btn sec" type="submit"%s>Save Settings</button></div>
 </form>
 <h3 style="margin:20px 0 8px;font-size:14px">API Token</h3>
 <p style="margin:0 0 10px;color:var(--mut)">Read-only bearer token for
@@ -2480,13 +2485,13 @@ def pg_about(d, msg: "str | tuple" = ""):
 <table class="kv">%s</table></div></div>
 <div class="card"><h3>Attached UPS</h3><div class="pad">
 <table class="kv">%s</table></div></div>""" % (
-        m, upd, csrf_input(d), csrf_input(d), rollbtn,
+        m, upd, csrf_input(d), dis, csrf_input(d), dis, rollbtn,
         esc(cfg("update", "repo", "ArMaTeC/apcupspi")),
         esc(cfg("update", "branch", "main")),
         sel(cfg("update", "channel", "releases"), "releases", "branch"),
         sel(cfg("update", "verify", "checksum"), "checksum", "strict", "0"),
         " checked" if cfg("update", "autocheck", "1") != "0" else "",
-        csrf_input(d),
+        csrf_input(d), dis,
         tokdisp,
         ("Replace the existing API token? Clients using it lose access."
          if utok else "Generate a new API token?"),
@@ -3206,6 +3211,13 @@ def update_status_view(uss):
     return uss
 
 
+def update_busy():
+    """An apply/rollback is queued or live — used to refuse starting a
+    second update on top of one already in flight."""
+    return update_status_view(_load_json(UPDATE_STATUS)).get("state") \
+        in ("queued", "running")
+
+
 def queue_update_status(msg):
     """Stamp update-status.json just before the updater unit starts —
     without it the apply console's first polls still read the previous
@@ -3267,6 +3279,8 @@ def do_update_check():
     implementation (and one cache file the About page reads)."""
     if not os.path.exists(UPDATE_TOOL):
         return ("msg-err", "Updater is not installed on this system.")
+    if update_busy():
+        return ("msg-err", "An update is already in progress.")
     try:
         subprocess.run([UPDATE_TOOL, "--check"], check=False,
                        capture_output=True, timeout=30)
@@ -3289,6 +3303,8 @@ def do_update_apply():
     payload and restarts this service, so nothing can block on it."""
     if not os.path.exists(UPDATE_TOOL):
         return ("msg-err", "Updater is not installed on this system.")
+    if update_busy():
+        return ("msg-err", "An update is already in progress.")
     queue_update_status("starting update")
     try:
         subprocess.run(["systemctl", "start", "--no-block",
@@ -4118,6 +4134,10 @@ class H(BaseHTTPRequestHandler):
                                         "/about/system", "About", "System"),
                               extra={"Cache-Control": "no-store"})
         if p == "/about/update/rollback":
+            if update_busy():
+                return self._redir("/about/system?r=err&why=" +
+                                   quote("An update is already "
+                                         "in progress."))
             queue_update_status("starting rollback")
             try:
                 subprocess.run(
