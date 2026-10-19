@@ -1320,6 +1320,12 @@ def page(title, body, d, path="", section="", leaf=""):
             nav += '<div class="sub">%s</div>' % items
             mnav += '<div class="sub">%s</div>' % items
     crumb = crumbs(section, leaf) if leaf else ""
+    updbar = ""
+    us = _load_json(UPDATE_STATE)
+    if us.get("available"):
+        updbar = ('<div class="updbar">Software update '
+                  '<a href="/about/system">%s</a> is available</div>'
+                  % esc(us.get("latest", "?")))
     return """<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
 <script>%s</script><title>APC | %s</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -1341,6 +1347,7 @@ def page(title, body, d, path="", section="", leaf=""):
   <a href="/logoff">Log Off</a>
  </div>
 </div>
+%s
 <div class="shell">
 <nav class="side">%s</nav>
 <details class="mnav"><summary>Menu</summary>%s</details>
@@ -1356,7 +1363,7 @@ def page(title, body, d, path="", section="", leaf=""):
         _asset("theme.js"), esc(title), _asset("nmc.css"),
         esc(d.get("ups.model", "Smart-UPS")),
         acls, esc(alabel), SUN, esc(WEB_USER),
-        nav, mnav, crumb, body,
+        updbar, nav, mnav, crumb, body,
         esc(NMC_FW), time.strftime("%m/%d/%Y at %H:%M"),
         _asset("nmc.js"))
 
