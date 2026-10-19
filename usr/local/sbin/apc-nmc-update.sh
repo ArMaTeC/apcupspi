@@ -57,8 +57,8 @@ TARBALL=${APC_NMC_UPDATE_TARBALL:-https://github.com/$REPO/archive/refs/heads/$B
 RELEASES_API="https://api.github.com/repos/$REPO/releases/latest"
 PUBKEY=/etc/apc-nmc/update-signing.pub
 
-jstr() {  # JSON-escape a string's content (no surrounding quotes added)
-    python3 -c 'import json,sys; print(json.dumps(sys.stdin.read())[1:-1], end="")'
+jstr() {  # JSON-escape $1's content (no surrounding quotes added)
+    printf '%s' "$1" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read())[1:-1], end="")'
 }
 
 rel_json() {  # print the latest-release JSON, empty on failure
@@ -418,18 +418,28 @@ do_rollback() {
         exit 1
     fi
     FROM=$(tr -d '[:space:]' < "$VERSION_FILE" 2>/dev/null); FROM=${FROM:-unknown}
-    TO=$(sed -n '1p' "$BAK/meta" 2>/dev/null); TO=${TO:-?}
+    TO=$(sed -n '1p' "$BAK/meta" 2>/dev/null)
+    [ -z "$TO" ] && TO=$(tr -d '[:space:]' < "$BAK/etc/apc-nmc/version" 2>/dev/null)
+    TO=${TO:-?}
     status running "rolling back to $TO"
     say "=== rollback started (installed: $FROM, backup: $(basename "$BAK")) ==="
 
     # every file under the backup mirror maps back to its absolute path;
-    # the driver is stored under its flattened name
-    find "$BAK" -type f ! -name meta | sort | while read -r f; do
+    # the driver is stored under its flattened name. Restore via temp +
+    # rename — cp over the running driver binary fails ETXTBSY
+    rc=0
+    while read -r f; do
         rel=${f#"$BAK"}
         [ "$rel" = "/usr-lib-nut-apc_modbus" ] && rel=/usr/lib/nut/apc_modbus
         mkdir -p "$(dirname "$rel")"
-        cp -a "$f" "$rel" && say "  restored $rel"
-    done
+        if cp -a "$f" "$rel.nmc-rb.$$" \
+                && mv -T "$rel.nmc-rb.$$" "$rel"; then
+            say "  restored $rel"
+        else
+            rm -f "$rel.nmc-rb.$$"; rc=1
+            say "  WARN: could not restore $rel"
+        fi
+    done < <(find "$BAK" -type f ! -name meta | sort)
 
     chgrp -R nut /etc/nut 2>/dev/null || true
     ldconfig 2>/dev/null || true
@@ -439,9 +449,15 @@ do_rollback() {
         || systemctl restart nut-driver.target 2>/dev/null || true
 
     write_json "$STATE" "{\"installed\":\"$(jstr "$TO")\",\"latest\":\"$(jstr "$TO")\",\"available\":false,\"checked_at\":$(date +%s),\"err\":\"\"}"
-    status ok "rolled back to $TO"
-    say "=== rollback to $TO complete ==="
+    if [ $rc -eq 0 ]; then
+        status ok "rolled back to $TO"
+        say "=== rollback to $TO complete ==="
+    else
+        status failed "rollback incomplete — see update.log"
+        say "=== rollback to $TO incomplete ==="
+    fi
     systemctl restart apc-nmc-web 2>/dev/null || true
+    [ $rc -eq 0 ]
 }
 
 case "${1:-}" in

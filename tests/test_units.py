@@ -84,6 +84,6 @@ def test_jstr_roundtrip(tmp_path):
         capture_output=True, text=True, check=True).stdout
     raw = 'line one\nline "two"\ttab\\back'
     r = subprocess.run(
-        ["bash", "-c", fn + '\nprintf %s "$0" | jstr', raw],
+        ["bash", "-c", fn + '\njstr "$0"', raw],
         capture_output=True, text=True, check=True)
     assert json.loads('"' + r.stdout + '"') == raw
