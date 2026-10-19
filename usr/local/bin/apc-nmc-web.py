@@ -2298,7 +2298,7 @@ def pg_about(d, msg: "str | tuple" = ""):
     if uss.get("state") == "ok" and fin > float(
             cfg_get("update_announced", 0) or 0):
         cfg_set("update_announced", fin)
-        log_event("NMC: Software updated: %s &#8250; %s."
+        log_event("NMC: Software updated: %s › %s."
                   % (uss.get("from", "?"), uss.get("to", "?")))
     checked = ("never" if not us.get("checked_at") else
                time.strftime("%m/%d/%Y %H:%M",
