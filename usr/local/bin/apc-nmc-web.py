@@ -13,11 +13,11 @@ translated to NUT instant commands and SET VARs.
 # ruff: noqa: BLE001, S110, UP031
 import configparser
 import fcntl
+import glob
 import hashlib
 import html
 import io
 import itertools
-import glob
 import json
 import os
 import re
@@ -3105,7 +3105,8 @@ def update_backups(state_dir="/var/lib/apc-nmc"):
         if not os.path.isdir(d):
             continue
         try:
-            meta = open(os.path.join(d, "meta")).read().split()
+            with open(os.path.join(d, "meta")) as fh:
+                meta = fh.read().split()
             ver = meta[0] if meta else "?"
             ts = int(meta[2]) if len(meta) > 2 else 0
         except (OSError, ValueError, IndexError):

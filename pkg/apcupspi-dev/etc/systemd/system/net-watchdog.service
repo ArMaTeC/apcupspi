@@ -1,0 +1,9 @@
+[Unit]
+Description=Network connectivity watchdog
+After=network-online.target NetworkManager.service
+Wants=NetworkManager.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/net-watchdog.sh
+TimeoutStartSec=180

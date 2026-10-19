@@ -1,0 +1,51 @@
+name: ci
+
+on: [push, pull_request]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - run: pip install ruff pytest
+      - run: ruff check usr/local/bin/
+      - run: python3 -m py_compile usr/local/bin/apc-nmc-web.py usr/local/bin/apc-nmc-agent.py
+      - run: python3 -m pytest tests -q
+      - name: shellcheck + bash -n
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq shellcheck
+          shellcheck -S warning install.sh usr/local/sbin/*.sh
+          for f in install.sh usr/local/sbin/*.sh; do bash -n "$f"; done
+
+  build-driver:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq build-essential libusb-1.0-0-dev
+      - name: build libmodbus + apc_modbus from vendored sources
+        run: |
+          set -e
+          W=/tmp/nutb; mkdir -p "$W"
+          tar -xzf vendor/libmodbus-*.tar.gz -C "$W"
+          (cd "$W"/libmodbus-* && ./configure --prefix=/usr/local \
+              && make -j"$(nproc)" && sudo make install)
+          sudo ldconfig
+          tar -xzf vendor/nut-2.8.5-src.tar.gz -C "$W"
+          # same APC_VF_UNAVAILABLE setvar guard as install.sh
+          if grep -q '!(apc_value->value_flags & APC_VF_UNAVAILABLE)' \
+                  "$W"/nut-2.8.5/drivers/apc_modbus.c; then
+            sed -i 's/!(apc_value->value_flags & APC_VF_UNAVAILABLE)/(apc_value->value_flags \& APC_VF_UNAVAILABLE)/' \
+                "$W"/nut-2.8.5/drivers/apc_modbus.c
+          fi
+          (cd "$W"/nut-2.8.5 \
+              && ./configure --with-drivers=apc_modbus \
+                  --with-modbus+usb=yes --with-doc=no \
+                  --without-asciidoc --without-pkg-config \
+              && make -j"$(nproc)")
+          test -x "$W"/nut-2.8.5/drivers/apc_modbus

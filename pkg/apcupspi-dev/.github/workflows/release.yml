@@ -1,0 +1,51 @@
+name: release
+
+# Tag a commit (v1.0.5 or 1.0.5) and this publishes a release the
+# appliances update from: a stable tarball + sha256 (+ optional
+# openssl signature when the UPDATE_SIGNING_KEY secret is set — the
+# matching public key ships as etc/apc-nmc/update-signing.pub).
+on:
+  push:
+    tags: ["v*", "[0-9]*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build reproducible payload tarball
+        run: |
+          set -e
+          V=${GITHUB_REF_NAME#v}
+          mkdir -p "pkg/apcupspi-$V"
+          git archive HEAD | tar -x -C "pkg/apcupspi-$V"
+          tar --sort=name --owner=0 --group=0 --numeric-owner \
+              -czf "apcupspi-$V.tar.gz" -C pkg "apcupspi-$V"
+          sha256sum "apcupspi-$V.tar.gz" > "apcupspi-$V.tar.gz.sha256"
+          ls -l "apcupspi-$V.tar.gz"*
+
+      - name: Sign payload (optional)
+        if: ${{ env.UPDATE_SIGNING_KEY != '' }}
+        run: |
+          set -e
+          V=${GITHUB_REF_NAME#v}
+          printf '%s' "$UPDATE_SIGNING_KEY" > /tmp/signing.key
+          openssl dgst -sha256 -sign /tmp/signing.key \
+              -out "apcupspi-$V.tar.gz.sig" "apcupspi-$V.tar.gz"
+          shred -u /tmp/signing.key
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          assets=$(ls apcupspi-*.tar.gz apcupspi-*.tar.gz.sha256 \
+                      apcupspi-*.tar.gz.sig 2>/dev/null || true)
+          gh release create "$GITHUB_REF_NAME" $assets \
+              --generate-notes --title "APC UPS Pi $GITHUB_REF_NAME"

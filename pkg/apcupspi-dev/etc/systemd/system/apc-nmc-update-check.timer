@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily APC NMC software update check
+
+[Timer]
+OnBootSec=20min
+OnCalendar=daily
+RandomizedDelaySec=1800
+Persistent=true
+
+[Install]
+WantedBy=timers.target
