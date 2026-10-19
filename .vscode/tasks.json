@@ -93,7 +93,13 @@
     {
       "label": "Release: bump VERSION + commit",
       "type": "shell",
-      "command": "echo \"${input:newVersion}\" > VERSION && git add VERSION && git commit -m \"Bump version to ${input:newVersion}\" && git show --stat HEAD",
+      "command": "set -e\nV=$(tr -d '[:space:]' < VERSION)\ncase \"$V\" in *.*.*) ;; *) echo \"VERSION '$V' is not x.y.z\" >&2; exit 1;; esac\nNV=$(awk -F. '{printf \"%d.%d.%d\", $1, $2, $3+1}' <<< \"$V\")\necho \"$NV\" > VERSION\ngit add VERSION && git commit -m \"Bump version to $NV\" && git show --stat HEAD",
+      "problemMatcher": []
+    },
+    {
+      "label": "Release: bump VERSION (choose part) + commit",
+      "type": "shell",
+      "command": "set -e\nV=$(tr -d '[:space:]' < VERSION)\nNV=$(awk -F. -v p=\"${input:bumpPart}\" '{if(p==\"major\")printf \"%d.0.0\",$1+1;else if(p==\"minor\")printf \"%d.%d.0\",$1,$2+1;else printf \"%d.%d.%d\",$1,$2,$3+1}' <<< \"$V\")\necho \"$NV\" > VERSION\ngit add VERSION && git commit -m \"Bump version to $NV\" && git show --stat HEAD",
       "problemMatcher": []
     },
     {
@@ -105,7 +111,7 @@
     {
       "label": "Publish: tag + push (triggers release.yml)",
       "type": "shell",
-      "command": "git push origin main && git tag \"${input:tagVersion}\" && git push origin \"${input:tagVersion}\" && echo \"Release workflow should now publish tag ${input:tagVersion}\"",
+      "command": "set -e\nV=$(tr -d '[:space:]' < VERSION)\ngit push origin main && git tag \"$V\" && git push origin \"$V\" && echo \"Release workflow should now publish tag $V\"",
       "problemMatcher": []
     },
     {
@@ -139,15 +145,11 @@
       "password": true
     },
     {
-      "id": "newVersion",
-      "type": "promptString",
-      "description": "New version to write into VERSION (e.g. 1.1.1)"
-    },
-    {
-      "id": "tagVersion",
-      "type": "promptString",
-      "description": "Tag to create + push (e.g. 1.1.1 or v1.1.1)",
-      "default": "1.1.1"
+      "id": "bumpPart",
+      "type": "pickString",
+      "description": "Which version component to bump",
+      "options": ["patch", "minor", "major"],
+      "default": "patch"
     },
     {
       "id": "pkgVersion",

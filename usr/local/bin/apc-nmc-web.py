@@ -1015,7 +1015,8 @@ def status_poller():
     while True:
         try:
             d = ups_vars()
-            ok = True
+            ok = ups_live(d)   # upsd answering isn't enough — the
+                               # driver must have polled the UPS too
         except Exception:
             d = {}
             ok = False
@@ -1087,6 +1088,9 @@ def data_logger():
     while True:
         try:
             d = ups_vars()
+            if not ups_live(d):
+                time.sleep(60)
+                continue     # UPS gone/stale — don't log dead rows
             rec = {"ts": int(time.time())}
             for k in keys:
                 v = d.get(k)
@@ -1216,9 +1220,17 @@ def fmt_runtime(d):
         return "unknown"
 
 
+def ups_live(d):
+    """Live UPS data = upsd answered AND the driver has polled the UPS —
+    ups.status is always published after a successful poll. A var set
+    without it (UPS unplugged, driver still starting, data stale) means
+    'no UPS', not merely unknown status flags."""
+    return bool(d.get("ups.status"))
+
+
 def power_state(d):
     ts = toks(d)
-    if not d:
+    if not ups_live(d):
         return ("Communication Lost", "st-crit")
     if "OFF" in ts:
         return ("Off", "st-crit")
@@ -1233,7 +1245,7 @@ def power_state(d):
 
 def alarms(d):
     ts = toks(d)
-    if not d:
+    if not ups_live(d):
         return ("Communication Lost", "pill-crit")
     if ts & {"ALARM", "LB", "RB", "OVER", "DISCHRG"}:
         return ("Critical Alarm Present", "pill-crit")
@@ -1270,7 +1282,7 @@ def alarm_lines(d):
     a = d.get("ups.alarm")
     if a:
         out.append("Alarm: " + humanize(a))
-    if not d:
+    if not ups_live(d):
         out.append("UPS communication lost.")
     return out or ["UPS is Online."]
 
@@ -1535,34 +1547,41 @@ def pg_home(d):
     fr = _home_frags(d)
     loc = cfg_get("location", LOCATION)
 
+    live = ups_live(d)
     charge = num(d, "battery.charge", 0) or 0
-    charge_cls = "crit" if charge < 20 else ("warn" if charge < 50 else "")
+    charge_cls = ("crit" if charge < 20 else "warn" if charge < 50
+                  else "") if live else ""
     loadp = num(d, "ups.load")
     watts = num(d, "ups.realpower")
     rt_sec = int(num(d, "battery.runtime", 0) or 0)
     rt_cls = "warn" if rt_sec and rt_sec < 1800 else ""
     tiles = (
-        tile("Battery Charge", "%g %%" % charge, "capacity",
-             bar=charge, cls=charge_cls, vid="battery.charge",
+        tile("Battery Charge", "%g %%" % charge if live else "?",
+             "capacity" if live else "no data",
+             bar=charge if live else None, cls=charge_cls,
+             vid="battery.charge",
              tip="Remaining battery capacity")
-        + tile("Runtime", "%dh %dm" % divmod(rt_sec // 60, 60),
-               "remaining", cls=rt_cls, vid="battery.runtime",
+        + tile("Runtime", "%dh %dm" % divmod(rt_sec // 60, 60)
+               if live else "?", "remaining" if live else "no data",
+               cls=rt_cls, vid="battery.runtime",
                tip="Estimated runtime at current load")
         + (tile("Load", "%g %%" % loadp, "of capacity", bar=loadp,
-                vid="ups.load") if loadp is not None else "")
+                vid="ups.load") if live and loadp is not None else "")
         + (tile("Output", "%g W" % watts,
                 "%s VA" % d.get("ups.power", "?"), vid="ups.realpower")
-           if watts is not None else "")
+           if live and watts is not None else "")
         + (tile("Input", "%g V" % num(d, "input.voltage", 0),
                 "%s Hz" % d.get("input.frequency", "?"),
-                vid="input.voltage") if "input.voltage" in d else "")
+                vid="input.voltage")
+           if live and "input.voltage" in d else "")
         + (tile("Output V", "%g V" % num(d, "output.voltage", 0),
                 "%s Hz" % d.get("output.frequency", "?"),
-                vid="output.voltage") if "output.voltage" in d else "")
+                vid="output.voltage")
+           if live and "output.voltage" in d else "")
         + (tile("Battery Temp", "%g \u00b0C"
                 % num(d, "battery.temperature", 0),
                 "internal", vid="battery.temperature")
-           if "battery.temperature" in d else "")
+           if live and "battery.temperature" in d else "")
     )
     return """<h1 class="page">Home</h1>
 <div class="tiles">%s</div>
@@ -2342,7 +2361,7 @@ def pg_about(d, msg: "str | tuple" = ""):
         ("NUT Driver", "%s %s" % (d.get("driver.name", "?"),
                                   d.get("driver.version", "?")))])
     us = _load_json(UPDATE_STATE)
-    uss = _load_json(UPDATE_STATUS)
+    uss = update_status_view(_load_json(UPDATE_STATUS))
     try:
         fin = float(uss.get("finished", 0) or 0)
     except (TypeError, ValueError):
@@ -2374,12 +2393,16 @@ def pg_about(d, msg: "str | tuple" = ""):
         upd += kv("Release Notes",
                   '<pre class="updnotes">%s</pre>'
                   % linkify("\n".join(us["notes"].splitlines()[:24])))
-    if uss.get("state") == "running" and update_running_live(uss):
+    if uss.get("state") == "queued":
+        upd += kv("Update Status",
+                  '<a href="/about/update/apply"><span class="st-warn">'
+                  'starting&hellip;</span></a>')
+    elif uss.get("state") == "running":
         upd += kv("Update Status",
                   '<a href="/about/update/apply"><span class="st-warn">'
                   'in progress: %s</span></a>'
                   % esc(uss.get("msg", "")))
-    elif uss.get("state") == "running":
+    elif uss.get("state") == "interrupted":
         upd += kv("Update Status", '<span class="st-warn">interrupted '
                   '(reboot?) &mdash; see update.log</span>')
     elif uss.get("state") == "failed":
@@ -2520,6 +2543,11 @@ function tick(){
        '(e.g. a reboot) &mdash; check <b>update.log</b> before '+
        'retrying or rolling back.</span> <a href="/about/system">'+
        'Back to About &#8250; System</a>';
+   }else if(s.state==='queued'){
+     /* the web side stamped this when it started the unit — the
+        updater itself writes 'running' once it takes the lock */
+     ph.textContent='Starting update';
+     setTimeout(tick,1500);
    }else if(!s.state){
      /* a real apply writes 'running' within a second or two — no state
         after a few polls means nothing is running (plain GET reload) */
@@ -3135,14 +3163,11 @@ def do_update_token(form):
     return ("msg-err", "Unknown action.")
 
 
-def update_running_live(uss):
-    """A 'running' update-status survives a reboot — the file is only
-    truth when the updater's lock is genuinely held. Same flock the
-    shell script takes: held => really running, free => interrupted."""
-    if uss.get("state") != "running":
-        return False
+def update_lock_held():
+    """True while the updater's flock is taken — the only reliable sign
+    an apply/rollback is alive; the status file survives reboots and
+    service kills."""
     try:
-        import fcntl
         fd = os.open(UPDATE_LOCK, os.O_RDONLY)
         try:
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -3154,6 +3179,53 @@ def update_running_live(uss):
     except OSError:
         pass                           # no lock file => nothing running
     return False
+
+
+def update_running_live(uss):
+    """A 'running' update-status survives a reboot — the file is only
+    truth when the updater's lock is genuinely held."""
+    return uss.get("state") == "running" and update_lock_held()
+
+
+def update_status_view(uss):
+    """update-status.json as the UI should report it: 'running' is only
+    real while the updater's lock is held (a persisted 'running' with a
+    free lock means the updater died mid-run — e.g. a reboot), and a
+    'queued' stamp expires when the systemd unit never gets going."""
+    st = uss.get("state")
+    if st == "running" and not update_lock_held():
+        return dict(uss, state="interrupted")
+    if st == "queued" and not update_lock_held():
+        try:
+            qts = float(uss.get("qts") or 0)
+        except (TypeError, ValueError):
+            qts = 0
+        if time.time() - qts > 90:
+            return dict(uss, state="failed",
+                        msg="update service did not start")
+    return uss
+
+
+def queue_update_status(msg):
+    """Stamp update-status.json just before the updater unit starts —
+    without it the apply console's first polls still read the previous
+    run's terminal state and immediately jump back to About. logpos
+    marks where this run's output begins so /progress can open on a
+    fresh view instead of the last run's tail."""
+    try:
+        size = os.path.getsize(UPDATE_LOG)
+    except OSError:
+        size = 0
+    try:
+        tmp = UPDATE_STATUS + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump({"state": "queued", "msg": msg, "from": "",
+                       "to": "", "finished": 0, "qts": int(time.time()),
+                       "logpos": size}, f)
+        os.chmod(tmp, 0o640)
+        os.replace(tmp, UPDATE_STATUS)
+    except OSError:
+        pass
 
 
 def update_backups(state_dir="/var/lib/apc-nmc"):
@@ -3217,6 +3289,7 @@ def do_update_apply():
     payload and restarts this service, so nothing can block on it."""
     if not os.path.exists(UPDATE_TOOL):
         return ("msg-err", "Updater is not installed on this system.")
+    queue_update_status("starting update")
     try:
         subprocess.run(["systemctl", "start", "--no-block",
                         "apc-nmc-update.service"],
@@ -3692,17 +3765,21 @@ class H(BaseHTTPRequestHandler):
                 pos = int(q.get("pos", ["-1"])[0])
             except ValueError:
                 pos = -1
-            out = _load_json(UPDATE_STATUS)
-            # a persisted "running" with no lock held means the updater
-            # died (e.g. reboot) — tell the console to stop waiting
-            if out.get("state") == "running" \
-                    and not update_running_live(out):
-                out["state"] = "interrupted"
+            out = update_status_view(_load_json(UPDATE_STATUS))
             try:
                 with open(UPDATE_LOG, "rb") as f:
                     f.seek(0, 2)
                     size = f.tell()
-                    if pos < 0:
+                    if pos < 0 and out.get("state") == "queued":
+                        # a queued stamp knows where the new run's log
+                        # begins — start there, not at the previous
+                        # run's marker
+                        try:
+                            pos = min(size, max(0, int(
+                                out.get("logpos") or 0)))
+                        except (TypeError, ValueError):
+                            pos = size
+                    elif pos < 0:
                         pos = max(0, size - 65536)
                         f.seek(pos)
                         m = f.read().rfind(b"=== update started")
@@ -4041,6 +4118,7 @@ class H(BaseHTTPRequestHandler):
                                         "/about/system", "About", "System"),
                               extra={"Cache-Control": "no-store"})
         if p == "/about/update/rollback":
+            queue_update_status("starting rollback")
             try:
                 subprocess.run(
                     ["systemctl", "start", "--no-block",

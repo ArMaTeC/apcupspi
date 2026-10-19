@@ -172,8 +172,10 @@ do_apply() {
     local work SRC TO CHANGED DRIVER_CHG
     FROM=$(tr -d '[:space:]' < "$VERSION_FILE" 2>/dev/null); FROM=${FROM:-unknown}
     TO="?"
-    status running "downloading update"
+    # marker before status: the web console anchors on it, and a first
+    # poll that sees "running" must already find this run's marker
     say "=== update started (installed: $FROM) ==="
+    status running "downloading update"
 
     work=$(mktemp -d /tmp/apc-nmc-update.XXXXXX) || { status failed "no temp dir"; exit 1; }
     # deliberate early expansion: a local var would be unbound by the time
@@ -425,8 +427,8 @@ do_rollback() {
     TO=$(sed -n '1p' "$BAK/meta" 2>/dev/null)
     [ -z "$TO" ] && TO=$(tr -d '[:space:]' < "$BAK/etc/apc-nmc/version" 2>/dev/null)
     TO=${TO:-?}
-    status running "rolling back to $TO"
     say "=== rollback started (installed: $FROM, backup: $(basename "$BAK")) ==="
+    status running "rolling back to $TO"
 
     # every file under the backup mirror maps back to its absolute path;
     # the driver is stored under its flattened name. Restore via temp +
