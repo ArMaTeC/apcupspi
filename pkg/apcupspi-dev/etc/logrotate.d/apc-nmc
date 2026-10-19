@@ -1,9 +1,0 @@
-/var/lib/apc-nmc/agent.log {
-    weekly
-    rotate 4
-    compress
-    missingok
-    notifempty
-    copytruncate
-    su Debian-snmp Debian-snmp
-}

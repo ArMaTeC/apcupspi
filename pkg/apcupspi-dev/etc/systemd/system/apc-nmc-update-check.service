@@ -1,9 +1,0 @@
-[Unit]
-Description=APC NMC software update check
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=oneshot
-ExecStart=/usr/local/sbin/apc-nmc-update.sh --check-auto
-TimeoutStartSec=60
