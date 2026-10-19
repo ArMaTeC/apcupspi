@@ -203,7 +203,8 @@ read-only bearer token for monitoring, **Clear** removes it.
 **Release channel.** By default the updater tracks the repo's newest
 GitHub release/tag rather than `main` — pushing a tag like `1.1.0`
 triggers the `release` workflow, which publishes a reproducible tarball
-+ `.sha256` (+ `.sig` when signing is set up, below). Release notes
+with a `.sha256` checksum (and a `.sig` when signing is set up, below).
+Release notes
 appear in the update card. If no releases exist it falls back to
 tracking the `VERSION` file on `[update] branch`.
 
