@@ -1118,6 +1118,24 @@ def esc(x):
     return html.escape(str(x))
 
 
+_URL_RE = re.compile(r"(https?://[^\s<>'\"]+)")
+
+
+def linkify(text):
+    # esc() + wrap bare URLs in anchors — used for release notes, which
+    # arrive as plain text (release body markdown) over update.json
+    out = []
+    for part in _URL_RE.split(str(text)):
+        if _URL_RE.fullmatch(part):
+            url = part.rstrip(".,;:!?)]\"'")
+            out.append('<a href="%s" target="_blank" rel="noopener '
+                       'noreferrer">%s</a>%s'
+                       % (esc(url), esc(url), esc(part[len(url):])))
+        else:
+            out.append(esc(part))
+    return "".join(out)
+
+
 def num(d, key, default=None):
     try:
         return float(d.get(key))
@@ -2321,7 +2339,7 @@ def pg_about(d, msg: "str | tuple" = ""):
     if us.get("available") and us.get("notes"):
         upd += kv("Release Notes",
                   '<pre class="updnotes">%s</pre>'
-                  % esc("\n".join(us["notes"].splitlines()[:24])))
+                  % linkify("\n".join(us["notes"].splitlines()[:24])))
     if uss.get("state") == "running" and update_running_live(uss):
         upd += kv("Update Status",
                   '<a href="/about/update/apply"><span class="st-warn">'
