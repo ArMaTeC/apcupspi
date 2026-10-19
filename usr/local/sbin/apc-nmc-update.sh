@@ -66,7 +66,7 @@ status() {  # status <state> <message>
     local finished=0
     [ "$1" = ok ] || [ "$1" = failed ] && finished=$(date +%s)
     write_json "$STATUS" \
-        "{\"state\":\"$(jstr "$1")\",\"msg\":\"$(jstr "$2")\",\"from\":\"$(jstr "$FROM")\",\"to\":\"$(jstr "$TO")\",\"finished\":$finished}"
+        "{\"state\":\"$(jstr "$1")\",\"msg\":\"$(jstr "$2")\",\"from\":\"$(jstr "${FROM:-}")\",\"to\":\"$(jstr "${TO:-}")\",\"finished\":$finished}"
 }
 
 ver_newer() {  # ver_newer <installed> <latest> — latest strictly newer?
@@ -79,6 +79,11 @@ ver_newer() {  # ver_newer <installed> <latest> — latest strictly newer?
 do_check() {
     exec 9>"$LOCK"; flock -n 9 || exit 0
     local now installed latest avail
+    # an apply can't be running (we hold the lock) — a status left at
+    # "running" means it was killed mid-run (e.g. reboot)
+    if grep -q '"state":"running"' "$STATUS" 2>/dev/null; then
+        status failed "update interrupted"
+    fi
     now=$(date +%s)
     installed=$(tr -d '[:space:]' < "$VERSION_FILE" 2>/dev/null)
     installed=${installed:-unknown}
