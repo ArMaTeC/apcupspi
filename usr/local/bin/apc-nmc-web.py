@@ -2427,8 +2427,8 @@ def pg_about(d, msg: "str | tuple" = ""):
         rollbtn = ("""<form method="post" action="/about/update/rollback"
  style="display:inline" onsubmit="return confirm('Restore the most recent update backup? Services (including this interface) restart during rollback.')">"""
                    + csrf_input(d) +
-                   '<button class="btn sec" type="submit"%s>Roll Back'
-                   '</button></form>' % dis)
+                   '<button class="btn sec updbtn" type="submit"%s>'
+                   'Roll Back</button></form>' % dis)
     newkeys = config_new_keys()
     if newkeys:
         upd += kv("New Config Options",
@@ -2451,11 +2451,12 @@ def pg_about(d, msg: "str | tuple" = ""):
     return """<h1 class="page">About</h1>%s
 <div class="card"><h3>Software Update</h3><div class="pad">
 <table class="kv">%s</table>
-<form method="post" action="/about/update/check" style="display:inline">%s
-<button class="btn sec" type="submit"%s>Check for Updates</button></form>
+<form method="post" action="/about/update/check" style="display:inline"
+ onsubmit="var b=this.querySelector('button');b.disabled=true;b.textContent='Checking&#8230;';">%s
+<button class="btn sec updbtn" type="submit"%s>Check for Updates</button></form>
 <form method="post" action="/about/update/apply" style="display:inline"
  onsubmit="return confirm('Download and install the latest version now? Services (including this interface) restart during the update.')">
-%s<button class="btn sec" type="submit"%s>Update Now</button></form>
+%s<button class="btn sec updbtn" type="submit"%s>Update Now</button></form>
 %s</div></div>
 <div class="card"><h3>Update Settings</h3><div class="pad">
 <form method="post" action="/about/update/settings"><table class="kv">
@@ -2469,7 +2470,7 @@ def pg_about(d, msg: "str | tuple" = ""):
  <input type="checkbox" name="uautocheck" value="1"%s></td></tr>
 </table>
 <div style="margin-top:14px">%s
-<button class="btn sec" type="submit"%s>Save Settings</button></div>
+<button class="btn sec updbtn" type="submit"%s>Save Settings</button></div>
 </form>
 <h3 style="margin:20px 0 8px;font-size:14px">API Token</h3>
 <p style="margin:0 0 10px;color:var(--mut)">Read-only bearer token for
@@ -3192,7 +3193,7 @@ def update_running_live(uss):
     return uss.get("state") == "running" and update_lock_held()
 
 
-def update_status_view(uss):
+def update_status_view(uss) -> dict:
     """update-status.json as the UI should report it: 'running' is only
     real while the updater's lock is held (a persisted 'running' with a
     free lock means the updater died mid-run — e.g. a reboot), and a
@@ -3645,6 +3646,8 @@ class H(BaseHTTPRequestHandler):
         lab, _ = power_state(d)
         d["sys.state"] = lab
         d["sys.alarm"], d["sys.pill"] = alarms(d)
+        d["sys.updstate"] = update_status_view(
+            _load_json(UPDATE_STATUS)).get("state", "")
         d["sys.ts"] = str(int(time.time()))
         return d
 

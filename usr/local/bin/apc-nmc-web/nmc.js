@@ -226,6 +226,15 @@ setInterval(function () {
             p.className = nc;
             p.textContent = d['sys.alarm'];
         }
+        // Update buttons (About > System): lock while a run is queued or
+        // live, release on ok/failed/interrupted — no page reload needed.
+        var busy = (d['sys.updstate'] === 'queued' ||
+                    d['sys.updstate'] === 'running');
+        document.querySelectorAll('button.updbtn').forEach(function (b) {
+            b.disabled = busy;
+            if (busy) b.title = 'an update is in progress';
+            else b.removeAttribute('title');
+        });
     }).catch(function () {
         var ld = document.getElementById('liveDot');
         if (ld) ld.classList.add('bad');
