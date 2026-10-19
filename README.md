@@ -161,7 +161,28 @@ Runs at the end of the install, and can be re-run any time via
 | `/var/swap` | Creates a dedicated 10G swapfile |
 | Argon One | Fan/button daemon + i2c, if you run the Argon One case |
 
-## 🔔 Alerts
+## � Updating
+
+The card checks this repo once a day (`apc-nmc-update-check.timer`) and
+shows the result under **About → System → Software Update**, where you
+can also force a check and apply the update — the web interface and any
+affected services restart themselves afterwards.
+
+From SSH:
+
+```bash
+apc-nmc-update.sh --check     # see if an update is available
+apc-nmc-update.sh --apply     # download + deploy the latest version
+apc-nmc-update.sh --status    # last check / last apply result
+```
+
+Updates deploy code, web assets, systemd units and the prebuilt
+`apc_modbus` driver — **never** your `nmc.conf`, TLS keys, NUT or SNMP
+credentials (which `install.sh` would regenerate). Replaced files are
+backed up under `/var/lib/apc-nmc/update-backup-*/`. The repo/branch
+tracked is the `[update]` section in `nmc.conf`.
+
+## �🔔 Alerts
 
 UPS events — power loss/restore, low battery, overload, comms loss,
 self-test results, alarms — can be pushed to **Discord**, **Teams**, any

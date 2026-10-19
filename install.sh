@@ -93,9 +93,11 @@ echo ">> Installing application files..."
 put usr/local/bin/apc-nmc-web.py   0755
 put usr/local/bin/apc-nmc-agent.py 0755
 put usr/local/bin/apc-nmc-web              # web UI assets (js/css)
+put usr/local/sbin/apc-nmc-update.sh    0755
 put usr/local/sbin/firstboot-wizard.sh  0755
 put usr/local/sbin/net-watchdog.sh      0755
 put usr/local/sbin/nut-usb-detect.sh    0755
+put usr/local/sbin/pi-system-backup.sh  0755
 
 # Run a long build step quietly (full output -> $log) while showing a
 # spinner, elapsed time and the latest log line so builds don't look hung.
@@ -203,6 +205,9 @@ put etc/systemd/system/apc-nmc-web.service 0644
 put etc/systemd/system/apc-nmc-web.service.d 2>/dev/null || true
 put etc/systemd/system/net-watchdog.service 0644
 put etc/systemd/system/net-watchdog.timer 0644
+put etc/systemd/system/apc-nmc-update.service 0644
+put etc/systemd/system/apc-nmc-update-check.service 0644
+put etc/systemd/system/apc-nmc-update-check.timer 0644
 put etc/systemd/system/firstboot-wizard.service 0644
 put etc/systemd/system/nut-server.service.d 2>/dev/null || true
 put etc/systemd/system/nut-driver@.service.d 2>/dev/null || true
@@ -284,6 +289,9 @@ EOF
 # nmc.conf seeded from the sanitized template; the wizard patches it.
 [ -f /etc/apc-nmc/nmc.conf ] || cp /etc/apc-nmc/nmc.conf.default /etc/apc-nmc/nmc.conf
 chmod 640 /etc/apc-nmc/nmc.conf 2>/dev/null || true
+
+# software version stamp, used by the update check (About > System)
+install -D -m 0644 "$SRC/VERSION" /etc/apc-nmc/version 2>/dev/null || true
 
 # self-signed HTTPS cert (wizard can regenerate with the real hostname)
 # The SNMP agent runs as Debian-snmp and writes state/events/agent.log here;
@@ -385,7 +393,8 @@ systemctl daemon-reload && echo "   systemd reloaded"
 systemctl unmask ssh.service 2>/dev/null || true
 for s in nut-server nut-monitor nut-driver-enumerator.path \
          nut-driver-enumerator.service \
-         snmpd apc-nmc-web net-watchdog.timer ssh serial-getty@ttyS0; do
+         snmpd apc-nmc-web net-watchdog.timer apc-nmc-update-check.timer \
+         ssh serial-getty@ttyS0; do
     echo "   enabling: $s"
     systemctl enable "$s" 2>&1 || echo "   !! could not enable $s"
 done

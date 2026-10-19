@@ -1,6 +1,2 @@
+.ruff_cache/
 __pycache__/
-*.pyc
-ca.key
-
-# private build-server tool — never published
-usr/local/sbin/pi-system-backup.sh

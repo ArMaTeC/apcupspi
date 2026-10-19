@@ -46,6 +46,10 @@ MAX_DATA = 1500              # ~25h at 60s sampling
 SESSION_TTL = 8 * 3600       # sliding
 LOGIN_MAX_FAILS = 5
 LOGIN_LOCKOUT = 300          # seconds
+VERSION_FILE = "/etc/apc-nmc/version"
+UPDATE_STATE = "/var/lib/apc-nmc/update.json"
+UPDATE_STATUS = "/var/lib/apc-nmc/update-status.json"
+UPDATE_TOOL = "/usr/local/sbin/apc-nmc-update.sh"
 
 _cp = configparser.ConfigParser()
 _cp.read(CONF)
@@ -206,7 +210,11 @@ def ups_rw():
 
 def ups_cmd(cmd):
     with _nut_lock:
-        return nut.instcmd(UPSNAME, cmd)
+        r = nut.instcmd(UPSNAME, cmd)
+    if cmd in ("beeper.mute", "beeper.enable", "beeper.disable") \
+            and r.startswith(("OK", "PENDING")):
+        save_state({"beeper_muted": cmd == "beeper.mute"})
+    return r
 
 
 def ups_setvar(var, val):
@@ -908,6 +916,25 @@ def _maybe_scheduled_selftest(ok):
         ups_cmd("test.battery.start")
 
 
+def _auto_unmute_beeper(d, ok):
+    """Re-arm the beeper after a card-tracked mute once the UPS leaves
+    the alarm state, so the next alarm is audible again."""
+    if not ok or not load_state().get("beeper_muted"):
+        return
+    if alarms(d)[1] != "pill-ok" or d.get("ups.alarm"):
+        return
+    b = (d.get("ups.beeper.status") or "").strip().lower()
+    if b in ("enabled", "disabled"):
+        save_state({"beeper_muted": False})
+        return
+    r = ups_cmd("beeper.enable")   # success also clears beeper_muted
+    if r.startswith("OK"):
+        log_event("UPS: Audible alarm re-enabled; the muted alarm "
+                  "condition cleared.")
+    elif "CMD-NOT-SUPPORTED" in r or "INVALID-ARGUMENT" in r:
+        save_state({"beeper_muted": False})
+
+
 def status_poller():
     prev = None
     comm_ok = None
@@ -960,6 +987,7 @@ def status_poller():
                     _run_hook(flag, "off", " ".join(sorted(ts)))
             if "OB" in ts and "OB" not in prev:
                 save_state({"last_transfer": time.strftime("%m/%d/%Y %H:%M:%S")})
+        _auto_unmute_beeper(d, ok)
         prev = ts
         time.sleep(10)
 
@@ -1495,6 +1523,10 @@ def _status_frags(d):
         top += kv("UPS Alarm",
                   '<span style="color:#b00020">%s</span>'
                   % esc(humanize(d["ups.alarm"])))
+    if (d.get("ups.beeper.status") or "").strip().lower() == "muted":
+        top += kv("Audible Alarm",
+                  "Muted" + (" &mdash; re-arms when the alarm clears"
+                             if st.get("beeper_muted") else ""))
     obc = int(st.get("ob_count", 0) or 0)
     obs = int(st.get("total_ob_seconds", 0) or 0)
     if st.get("ob_since"):
@@ -2162,7 +2194,8 @@ def pg_data():
 <script>%s</script>""" % (ecard, rows, len(data), _asset("datalog.js"))
 
 
-def pg_about(d):
+def pg_about(d, msg: "str | tuple" = ""):
+    m = '<div class="%s">%s</div>' % msg if msg else ""
     try:
         with open("/sys/class/net/eth0/address") as f:
             mac = f.read().strip().upper()
@@ -2202,11 +2235,59 @@ def pg_about(d):
         ("UPS Identifier", d.get("ups.id", "?")),
         ("NUT Driver", "%s %s" % (d.get("driver.name", "?"),
                                   d.get("driver.version", "?")))])
-    return """<h1 class="page">About</h1>
+    us = _load_json(UPDATE_STATE)
+    uss = _load_json(UPDATE_STATUS)
+    try:
+        fin = float(uss.get("finished", 0) or 0)
+    except (TypeError, ValueError):
+        fin = 0
+    if uss.get("state") == "ok" and fin > float(
+            cfg_get("update_announced", 0) or 0):
+        cfg_set("update_announced", fin)
+        log_event("NMC: Software updated: %s &#8250; %s."
+                  % (uss.get("from", "?"), uss.get("to", "?")))
+    checked = ("never" if not us.get("checked_at") else
+               time.strftime("%m/%d/%Y %H:%M",
+                             time.localtime(us["checked_at"])))
+    if us.get("err"):
+        avail = '<span class="st-warn">check failed: %s</span>' \
+                % esc(us["err"])
+    elif us.get("available"):
+        avail = '<span class="st-warn">yes &mdash; %s available</span>' \
+                % esc(us.get("latest", "?"))
+    elif us.get("checked_at"):
+        avail = "no"
+    else:
+        avail = "?"
+    upd = "".join(kv(a, b) for a, b in [
+        ("Installed Version", esc(installed_version())),
+        ("Latest Version", esc(us.get("latest") or "?")),
+        ("Last Check", checked),
+        ("Update Available", avail)])
+    if uss.get("state") == "running":
+        upd += kv("Update Status", '<span class="st-warn">in progress: %s</span>'
+                  % esc(uss.get("msg", "")))
+    elif uss.get("state") == "failed":
+        upd += kv("Last Update", '<span class="st-warn">failed: %s</span>'
+                  % esc(uss.get("msg", "")))
+    elif uss.get("state") == "ok":
+        upd += kv("Last Update", esc("%s (to %s)"
+                  % (time.strftime("%m/%d/%Y %H:%M",
+                                   time.localtime(fin)) if fin else "done",
+                     uss.get("to", "?"))))
+    return """<h1 class="page">About</h1>%s
+<div class="card"><h3>Software Update</h3><div class="pad">
+<table class="kv">%s</table>
+<form method="post" action="/about/update/check" style="display:inline">%s
+<button class="btn sec" type="submit">Check for Updates</button></form>
+<form method="post" action="/about/update/apply" style="display:inline"
+ onsubmit="return confirm('Download and install the latest version now? Services (including this interface) restart during the update.')">
+%s<button class="btn sec" type="submit">Update Now</button></form></div></div>
 <div class="card"><h3>Network Management Card</h3><div class="pad">
 <table class="kv">%s</table></div></div>
 <div class="card"><h3>Attached UPS</h3><div class="pad">
-<table class="kv">%s</table></div></div>""" % (rows, dev)
+<table class="kv">%s</table></div></div>""" % (m, upd, csrf_input(d),
+                                              csrf_input(d), rows, dev)
 
 
 def pg_network():
@@ -2725,6 +2806,59 @@ def do_battery_replaced():
             "recorded locally, statistics reset."))
 
 
+# ============================================================ software update
+def installed_version():
+    try:
+        with open(VERSION_FILE) as f:
+            return f.read().strip() or "?"
+    except OSError:
+        return "?"          # install predates version stamping
+
+
+def _load_json(path):
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def do_update_check():
+    """Run the check through apc-nmc-update.sh so UI and CLI share one
+    implementation (and one cache file the About page reads)."""
+    if not os.path.exists(UPDATE_TOOL):
+        return ("msg-err", "Updater is not installed on this system.")
+    try:
+        subprocess.run([UPDATE_TOOL, "--check"], check=False,
+                       capture_output=True, timeout=30)
+    except Exception:
+        return ("msg-err", "Update check did not complete.")
+    st = _load_json(UPDATE_STATE)
+    if st.get("err"):
+        return ("msg-err", "Update check failed: %s" % esc(st["err"]))
+    if not st:
+        return ("msg-err", "Update check produced no result.")
+    if st.get("available"):
+        return ("msg-ok", "Update available: %s &#8250; %s"
+                % (esc(st.get("installed", "?")), esc(st.get("latest", "?"))))
+    return ("msg-ok", "Software is up to date (%s)."
+            % esc(st.get("installed", "?")))
+
+
+def do_update_apply():
+    """Queue the update unit and return immediately — it deploys the
+    payload and restarts this service, so nothing can block on it."""
+    if not os.path.exists(UPDATE_TOOL):
+        return ("msg-err", "Updater is not installed on this system.")
+    try:
+        subprocess.run(["systemctl", "start", "--no-block",
+                        "apc-nmc-update.service"],
+                       check=False, capture_output=True, timeout=15)
+    except Exception:
+        return ("msg-err", "Could not start the update service.")
+    return ("msg-ok", "")
+
+
 def do_config(form):
     def v(name):
         return form.get(name, [""])[0].strip()
@@ -3240,7 +3374,14 @@ class H(BaseHTTPRequestHandler):
                                   {"Content-Disposition":
                                    "attachment; filename=data.txt"})
             elif p == "/about/system":
-                b = pg_about(d)
+                q = parse_qs(urlparse(self.path).query)
+                msg = ""
+                if q.get("r", [""])[0] == "ok":
+                    msg = ("msg-ok", q.get("why", [""])[0]
+                           or "Done.")
+                elif q.get("r", [""])[0] == "err":
+                    msg = ("msg-err", q.get("why", ["Failed"])[0])
+                b = pg_about(d, msg)
                 section, leaf = "About", "System"
             elif p == "/about/network":
                 b = pg_network()
@@ -3423,6 +3564,34 @@ class H(BaseHTTPRequestHandler):
             _atomic_json(EVENTS_FILE, lambda old: [])
             log_event("NMC: Event log cleared by %s." % WEB_USER)
             return self._redir("/log/event")
+        if p == "/about/update/check":
+            try:
+                res = do_update_check()
+            except Exception:
+                traceback.print_exc()
+                res = ("msg-err", "Update check failed")
+            return self._redir("/about/system?r=%s&why=%s" % (
+                "ok" if res[0] == "msg-ok" else "err", quote(res[1])))
+        if p == "/about/update/apply":
+            try:
+                res = do_update_apply()
+            except Exception:
+                traceback.print_exc()
+                res = ("msg-err", "Update could not be started")
+            if res[0] != "msg-ok":
+                return self._redir("/about/system?r=err&why=" + quote(res[1]))
+            log_event("NMC: Software update started by %s." % WEB_USER)
+            body = """<h1 class="page">Software Update</h1>
+<div class="card"><h3>Update in progress</h3><div class="pad">
+<p>The appliance is downloading and installing the update. This
+interface restarts when it finishes &mdash; give it a minute or two,
+then reload.</p>
+<p><a class="btn sec" href="/about/system">Back to About &#8250;</a></p>
+</div></div>
+<script>setTimeout(function(){location="/about/system"},25000);</script>"""
+            return self._send(200, page("APC UPS", body, d, "/about/system",
+                                        "About", "System"),
+                              extra={"Cache-Control": "no-store"})
         self._page(404, pg_404(), d)
 
     do_PUT = do_DELETE = lambda s: s._send(405, "method not allowed",

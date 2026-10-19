@@ -501,6 +501,9 @@ def run_instcmd(cmd):
         log("instcmd error:", e)
         return "commit-failed"
     if r.startswith(("OK", "PENDING")):
+        if cmd in ("beeper.mute", "beeper.enable", "beeper.disable"):
+            state["beeper_muted"] = cmd == "beeper.mute"
+            save_state()
         log("instcmd %s -> %s" % (cmd, r))
         log_event("UPS: command '%s' issued via SNMP." % cmd, "warn")
         return "DONE"

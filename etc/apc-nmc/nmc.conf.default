@@ -49,3 +49,12 @@ hook =
 # weekly self-test: weekday 0-6 (Mon-Sun) + hour 0-23; empty = disabled
 selftest_weekday =
 selftest_hour =
+
+[update]
+# Software updates for this card (About > System > Check for updates).
+# The updater pulls the repo install.sh was fetched from.
+repo = ArMaTeC/apcupspi
+branch = main
+# daily background check via apc-nmc-update-check.timer; 0 disables it
+# (manual checks and updates still work)
+autocheck = 1

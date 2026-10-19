@@ -1,0 +1,3 @@
+# Vendored third-party code (Argon One daemon scripts, NUT sources)
+# is shipped verbatim — lint only this project's own files.
+exclude = ["etc/argon", "vendor", "docs"]
