@@ -51,6 +51,7 @@ VERSION_FILE = "/etc/apc-nmc/version"
 UPDATE_STATE = "/var/lib/apc-nmc/update.json"
 UPDATE_STATUS = "/var/lib/apc-nmc/update-status.json"
 UPDATE_LOG = "/var/lib/apc-nmc/update.log"
+UPDATE_LOCK = "/var/lib/apc-nmc/update.lock"
 UPDATE_TOOL = "/usr/local/sbin/apc-nmc-update.sh"
 
 _cp = configparser.ConfigParser()
@@ -2321,9 +2322,14 @@ def pg_about(d, msg: "str | tuple" = ""):
         upd += kv("Release Notes",
                   '<pre class="updnotes">%s</pre>'
                   % esc("\n".join(us["notes"].splitlines()[:24])))
-    if uss.get("state") == "running":
-        upd += kv("Update Status", '<span class="st-warn">in progress: %s</span>'
+    if uss.get("state") == "running" and update_running_live(uss):
+        upd += kv("Update Status",
+                  '<a href="/about/update/apply"><span class="st-warn">'
+                  'in progress: %s</span></a>'
                   % esc(uss.get("msg", "")))
+    elif uss.get("state") == "running":
+        upd += kv("Update Status", '<span class="st-warn">interrupted '
+                  '(reboot?) &mdash; see update.log</span>')
     elif uss.get("state") == "failed":
         upd += kv("Last Update", '<span class="st-warn">failed: %s</span>'
                   % esc(uss.get("msg", "")))
@@ -2456,6 +2462,12 @@ function tick(){
    }else if(s.state==='failed'){
      ph.textContent='Update failed';
      dn.innerHTML='<span class="st-warn">'+esc(s.msg||'failed')+'</span>';
+   }else if(s.state==='interrupted'){
+     ph.textContent='Update interrupted';
+     dn.innerHTML='<span class="st-warn">The updater stopped mid-run '+
+       '(e.g. a reboot) &mdash; check <b>update.log</b> before '+
+       'retrying or rolling back.</span> <a href="/about/system">'+
+       'Back to About &#8250; System</a>';
    }else if(!s.state){
      /* a real apply writes 'running' within a second or two — no state
         after a few polls means nothing is running (plain GET reload) */
@@ -3063,6 +3075,27 @@ def do_update_token(form):
     return ("msg-err", "Unknown action.")
 
 
+def update_running_live(uss):
+    """A 'running' update-status survives a reboot — the file is only
+    truth when the updater's lock is genuinely held. Same flock the
+    shell script takes: held => really running, free => interrupted."""
+    if uss.get("state") != "running":
+        return False
+    try:
+        import fcntl
+        fd = os.open(UPDATE_LOCK, os.O_RDONLY)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            os.close(fd)
+            return True                # lock held — apply in progress
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        os.close(fd)
+    except OSError:
+        pass                           # no lock file => nothing running
+    return False
+
+
 def update_backups(state_dir="/var/lib/apc-nmc"):
     """Newest-first list of (dir, restored_version, epoch) for
     update-backup-* dirs — the rollback points --rollback restores."""
@@ -3589,6 +3622,11 @@ class H(BaseHTTPRequestHandler):
             except ValueError:
                 pos = -1
             out = _load_json(UPDATE_STATUS)
+            # a persisted "running" with no lock held means the updater
+            # died (e.g. reboot) — tell the console to stop waiting
+            if out.get("state") == "running" \
+                    and not update_running_live(out):
+                out["state"] = "interrupted"
             try:
                 with open(UPDATE_LOG, "rb") as f:
                     f.seek(0, 2)
