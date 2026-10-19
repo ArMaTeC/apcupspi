@@ -9,7 +9,7 @@
 *Give any NUT-monitored UPS a real **AP9631 (NMC2)** web UI, SNMP agent and
 management card presence — for the price of a Pi.*
 
-[![Raspberry Pi](https://img.shields.io/badge/Raspberry%20Pi-4%20%7C%205-A22846?logo=raspberrypi&logoColor=white)](https://www.raspberrypi.com/)
+[![Raspberry Pi](https://img.shields.io/badge/Raspberry%20Pi-3B%2B%20%7C%204%20%7C%205-A22846?logo=raspberrypi&logoColor=white)](https://www.raspberrypi.com/)
 [![OS](https://img.shields.io/badge/OS-Raspberry%20Pi%20OS%20%7C%20Debian%2064--bit-1793D1?logo=debian&logoColor=white)](https://www.raspberrypi.com/software/)
 [![Python](https://img.shields.io/badge/Python-3.x-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![NUT](https://img.shields.io/badge/NUT-2.8.x-E95420)](https://networkupstools.org/)
@@ -107,9 +107,10 @@ routing, sessions and backup/restore*
 
 ## 🚀 Install
 
-**Requirements:** Raspberry Pi 4 or 5 · Raspberry Pi OS (or Debian) 64-bit ·
-~2 GB free disk (vendored NUT/libmodbus are compiled on the target) · a UPS
-supported by NUT.
+**Requirements:** Raspberry Pi 3B+, 4 or 5 · Raspberry Pi OS (or Debian) —
+64-bit recommended; 32-bit works too because the vendored NUT/libmodbus are
+compiled on the target (the shipped prebuilt driver is aarch64-only) ·
+~2 GB free disk · a UPS supported by NUT.
 
 Flash **Raspberry Pi OS (64-bit)** — Imager customisation (hostname, user,
 SSH key, WiFi) is honoured — then either:
@@ -166,13 +167,15 @@ Runs at the end of the install, and can be re-run any time via
 The card checks this repo once a day (`apc-nmc-update-check.timer`) and
 shows the result under **About → System → Software Update**, where you
 can also force a check and apply the update — the web interface and any
-affected services restart themselves afterwards.
+affected services restart themselves afterwards. Applying streams the
+update log (including the NUT build) live to a console in the UI.
 
 From SSH:
 
 ```bash
 apc-nmc-update.sh --check     # see if an update is available
 apc-nmc-update.sh --apply     # download + deploy the latest version
+apc-nmc-update.sh --rollback  # restore the newest update backup
 apc-nmc-update.sh --status    # last check / last apply result
 ```
 
@@ -180,9 +183,31 @@ Updates deploy code, web assets and systemd units, and rebuild the
 `apc_modbus` driver from the vendored NUT sources exactly like
 `install.sh` (falling back to the shipped binary if the build can't
 run) — **never** your `nmc.conf`, TLS keys, NUT or SNMP credentials
-(which `install.sh` would regenerate). Replaced files are backed up
-under `/var/lib/apc-nmc/update-backup-*/`. The repo/branch tracked is
-the `[update]` section in `nmc.conf`.
+(which `install.sh` would regenerate). Replaced files and synced
+directories are backed up under `/var/lib/apc-nmc/update-backup-*/`,
+which `--rollback` (or the **Roll Back** button) restores.
+
+**Release channel.** By default the updater tracks the repo's newest
+GitHub release/tag rather than `main` — a tag like `1.0.5` triggers the
+`release` workflow, which publishes a reproducible tarball + `.sha256`
+(+ `.sig` when the maintainer sets up signing, below). Release notes
+appear in the update card. If no releases exist it falls back to
+tracking `[update] branch`'s `VERSION` file. `[update] verify` in
+`nmc.conf` controls checking: `checksum` (default), `strict` (refuse
+unverifiable payloads) or `0`.
+
+**Signed updates (optional).** Generate a keypair once:
+
+```bash
+openssl genpkey -algorithm RSA -out update-signing.key
+openssl rsa -pubout -in update-signing.key -out etc/apc-nmc/update-signing.pub
+```
+
+Commit the `.pub` (ships to `/etc/apc-nmc/update-signing.pub`), keep
+the private key out of the repo and store it as the
+`UPDATE_SIGNING_KEY` GitHub secret — the release workflow then attaches
+a signature every update verifies with `openssl`. A bad signature
+always fails the update; no pubkey shipped = signature checks skipped.
 
 ## �🔔 Alerts
 
@@ -202,6 +227,11 @@ JSON endpoints on the management UI (behind the web login unless noted):
 
 - `GET /api/v1/vars` — live UPS variables (status, load, battery…)
 - `GET /api/v1/commands` — instant commands the UPS exposes
+
+`/api/v1/*` and `/metrics` also accept a read-only bearer token — set
+`api_token` under `[web]` in `nmc.conf` and send
+`Authorization: Bearer <token>` (Nagios/Prometheus-friendly; no web
+session needed).
 - `GET /datalog.json` — logged power-quality samples
 - `GET /events.txt`, `GET /data.txt` — raw event/data logs, same as a real NMC
 - `GET /metrics` — Prometheus exposition (localhost or logged-in)
@@ -250,9 +280,12 @@ but `usbhid-ups`, `apcsmart`, `blazer_usb` and friends all work. The wizard
 asks which driver/port to use, and `nut-usb-detect` fills in the VID/PID
 automatically at driver start.
 
-**Pi 4 or Pi 5?**
-Both. `config.txt` uses per-model sections; only the Pi 4 gets the optional
-overclock.
+**Pi 3, 4 or 5?**
+All three. `config.txt` uses per-model sections; only the Pi 4 gets the
+optional overclock. Pi 5 is 64-bit only; on Pi 3/4 use the 64-bit OS image
+for the prebuilt driver path, or 32-bit works via the on-target source
+build. The Argon One case prompt only applies to Pi 4/5-era Argon cases —
+skip it on Pi 3.
 
 **What are the default web credentials?**
 The wizard sets them during install — there is no shipped password. If you
