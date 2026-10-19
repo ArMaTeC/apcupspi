@@ -7,9 +7,10 @@
 #   --check-auto   --check for the daily timer (skips when the
 #                  [update] autocheck = 0 option is set in nmc.conf)
 #   --apply        download the repo tarball and deploy code, assets,
-#                  systemd units and the prebuilt apc_modbus driver over
-#                  the running system — never user config or secrets —
-#                  then restart only what changed
+#                  systemd units and the apc_modbus driver (rebuilt from
+#                  the vendored NUT sources like install.sh, falling back
+#                  to the shipped binary) over the running system — never
+#                  user config or secrets — then restart only what changed
 #   --status       print the cached check/apply state
 #
 # apc-nmc-update-check.timer runs --check-auto daily. --apply runs under
@@ -167,19 +168,59 @@ do_apply() {
     done
     deploy etc/nut/upsd.users.default /etc/nut/upsd.users.default 0640
 
-    # Driver + its modbus library: deploy the shipped binary only when it
-    # differs (strip-compare — install.sh installs it stripped). No source
-    # rebuild here; install.sh still builds from vendor/ on fresh installs.
+    # Driver + modbus library: rebuild from the vendored sources when
+    # they and a toolchain are present — same result install.sh produces.
+    # The shipped prebuilt binary is the fallback (no sources, no
+    # toolchain, or a failed build). Either way the binary lands only
+    # when it strip-compares different, so a rebuild that produces the
+    # same driver does not restart it needlessly.
     DRIVER_CHG=0
-    if [ -f "${SRC}usr/lib/nut/apc_modbus" ]; then
-        install -s -m 0755 "${SRC}usr/lib/nut/apc_modbus" \
-            "$work/apc_modbus.strip" 2>/dev/null
+    DRV_NEW=""
+    if ls "${SRC}"vendor/nut-2.8.5-src.tar.gz \
+            "${SRC}"vendor/libmodbus-*.tar.gz >/dev/null 2>&1 \
+            && command -v gcc >/dev/null && command -v make >/dev/null; then
+        status running "building NUT driver"
+        J=$(nproc 2>/dev/null || echo 1)
+        if tar -xzf "$SRC"vendor/libmodbus-*.tar.gz -C "$work" \
+                && (cd "$work"/libmodbus-* \
+                    && ./configure --prefix=/usr/local >>"$LOG" 2>&1 \
+                    && make -j"$J" >>"$LOG" 2>&1 \
+                    && make install >>"$LOG" 2>&1); then
+            ldconfig
+            say "  rebuilt libmodbus"
+        else
+            say "WARN: libmodbus build failed — keeping installed copy"
+        fi
+        if tar -xzf "$SRC"vendor/nut-2.8.5-src.tar.gz -C "$work"; then
+            # same setvar fix as install.sh — survives an unpatched
+            # regenerated tarball (vendor/patches/…unavailable.patch)
+            if grep -q '!(apc_value->value_flags & APC_VF_UNAVAILABLE)' \
+                    "$work"/nut-2.8.5/drivers/apc_modbus.c 2>/dev/null; then
+                sed -i 's/!(apc_value->value_flags & APC_VF_UNAVAILABLE)/(apc_value->value_flags \& APC_VF_UNAVAILABLE)/' \
+                    "$work"/nut-2.8.5/drivers/apc_modbus.c
+            fi
+            if (cd "$work"/nut-2.8.5 \
+                    && ./configure --with-drivers=apc_modbus \
+                        --with-modbus+usb=yes --with-doc=no \
+                        --without-asciidoc --without-pkg-config >>"$LOG" 2>&1 \
+                    && make -j"$J" >>"$LOG" 2>&1); then
+                DRV_NEW="$work/nut-2.8.5/drivers/apc_modbus"
+                say "  rebuilt apc_modbus from source"
+            else
+                say "WARN: NUT build failed — falling back to shipped binary"
+            fi
+        fi
+    fi
+    [ -n "$DRV_NEW" ] || DRV_NEW="${SRC}usr/lib/nut/apc_modbus"
+    if [ -n "$DRV_NEW" ]; then
+        install -s -m 0755 "$DRV_NEW" "$work/apc_modbus.strip" 2>/dev/null
         if [ -s "$work/apc_modbus.strip" ] \
                 && ! cmp -s "$work/apc_modbus.strip" /usr/lib/nut/apc_modbus; then
-            cp -a /usr/lib/nut/apc_modbus "$BAK/usr-lib-nut-apc_modbus" 2>/dev/null
-            install -s -m 0755 "${SRC}usr/lib/nut/apc_modbus" \
-                /usr/lib/nut/apc_modbus.new.$$ \
-                && mv -T /usr/lib/nut/apc_modbus.new.$$ /usr/lib/nut/apc_modbus
+            cp -a /usr/lib/nut/apc_modbus "$BAK/usr-lib-nut-apc_modbus" \
+                2>/dev/null
+            install -s -m 0755 "$DRV_NEW" /usr/lib/nut/apc_modbus.new.$$ \
+                && mv -T /usr/lib/nut/apc_modbus.new.$$ \
+                    /usr/lib/nut/apc_modbus
             DRIVER_CHG=1; say "  updated /usr/lib/nut/apc_modbus"
         fi
     fi
@@ -187,6 +228,10 @@ do_apply() {
         [ -e "$l" ] || continue
         deploy "${l#"$SRC"}" "/${l#"$SRC"}" 0644
     done
+    # custom paths the driver was built with (same bridge install.sh makes)
+    mkdir -p /usr/local/ups /var/state
+    ln -sfn /etc/nut /usr/local/ups/etc
+    ln -sfn /run/nut /var/state/ups
 
     # VERSION stamps the install last, so a failed/partial update still
     # reports its real (older) version

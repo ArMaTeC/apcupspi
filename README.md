@@ -176,11 +176,13 @@ apc-nmc-update.sh --apply     # download + deploy the latest version
 apc-nmc-update.sh --status    # last check / last apply result
 ```
 
-Updates deploy code, web assets, systemd units and the prebuilt
-`apc_modbus` driver — **never** your `nmc.conf`, TLS keys, NUT or SNMP
-credentials (which `install.sh` would regenerate). Replaced files are
-backed up under `/var/lib/apc-nmc/update-backup-*/`. The repo/branch
-tracked is the `[update]` section in `nmc.conf`.
+Updates deploy code, web assets and systemd units, and rebuild the
+`apc_modbus` driver from the vendored NUT sources exactly like
+`install.sh` (falling back to the shipped binary if the build can't
+run) — **never** your `nmc.conf`, TLS keys, NUT or SNMP credentials
+(which `install.sh` would regenerate). Replaced files are backed up
+under `/var/lib/apc-nmc/update-backup-*/`. The repo/branch tracked is
+the `[update]` section in `nmc.conf`.
 
 ## �🔔 Alerts
 

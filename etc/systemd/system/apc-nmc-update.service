@@ -9,4 +9,4 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 ExecStart=/usr/local/sbin/apc-nmc-update.sh --apply
-TimeoutStartSec=300
+TimeoutStartSec=900   # vendored NUT + libmodbus rebuild is minutes on a Pi
