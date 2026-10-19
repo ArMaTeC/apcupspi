@@ -61,7 +61,8 @@ flowchart LR
 | 🛡️ **Resilience** | Kernel watchdog + `RuntimeWatchdogSec`, panic-reboot sysctl, per-service OOM tuning, `net-watchdog` connectivity recovery (per-interface gateway checks, Wi-Fi firmware wedge recovery) |
 | 🔔 **Alerts** | UPS events pushed to Discord, Teams, HTTP webhook, email (SMTP) or syslog — per-event routing matrix + severity filter + test buttons |
 | 🧙 **Setup Wizard** | Interactive first-boot wizard (hostname, credentials, network, UPS, SNMP, alerts, certs) — re-runnable anytime |
-| 📈 **Metrics** | Prometheus `/metrics` endpoint + JSON API + raw `events.txt`/`data.txt` like a real card |
+| 🔄 **Safe Updates** | Update to the newest GitHub release from the UI — sha256/signature-verified payload, live streaming build console, per-file backups + one-click rollback, global banner when an update exists |
+| 📈 **Metrics** | Prometheus `/metrics` endpoint + JSON API + raw `events.txt`/`data.txt` like a real card; optional read-only bearer token for monitoring clients |
 
 ## 📸 Screenshots
 
@@ -162,13 +163,16 @@ Runs at the end of the install, and can be re-run any time via
 | `/var/swap` | Creates a dedicated 10G swapfile |
 | Argon One | Fan/button daemon + i2c, if you run the Argon One case |
 
-## � Updating
+## 🔄 Updating
 
 The card checks this repo once a day (`apc-nmc-update-check.timer`) and
-shows the result under **About → System → Software Update**, where you
-can also force a check and apply the update — the web interface and any
-affected services restart themselves afterwards. Applying streams the
-update log (including the NUT build) live to a console in the UI.
+shows the result under **About → System → Software Update** — when an
+update exists a banner also appears under the top bar on every page.
+**Update Now** applies it: the landing page streams `update.log` —
+including the full libmodbus/NUT build — to a live console, and the
+in-progress status on the card links back to it. A reboot mid-update
+can't leave it hanging: a stale "running" status is detected via the
+updater's lock and reported as *interrupted* instead of waiting forever.
 
 From SSH:
 
@@ -181,20 +185,27 @@ apc-nmc-update.sh --status    # last check / last apply result
 
 Updates deploy code, web assets and systemd units, and rebuild the
 `apc_modbus` driver from the vendored NUT sources exactly like
-`install.sh` (falling back to the shipped binary if the build can't
-run) — **never** your `nmc.conf`, TLS keys, NUT or SNMP credentials
-(which `install.sh` would regenerate). Replaced files and synced
-directories are backed up under `/var/lib/apc-nmc/update-backup-*/`,
-which `--rollback` (or the **Roll Back** button) restores.
+`install.sh` (falling back to the shipped aarch64 binary when the build
+can't run — other architectures are always source-built) — **never**
+your `nmc.conf`, TLS keys, NUT or SNMP credentials (which `install.sh`
+would regenerate). Replaced files **and** synced directories are backed
+up under `/var/lib/apc-nmc/update-backup-*/` (kept: 3) — `--rollback`
+or the card's **Roll Back** button restores the newest one.
+
+**Update settings from the UI.** The *Update Settings* card edits the
+`[update]` section of `nmc.conf` directly — repository, branch, channel
+(`releases`|`branch`), verify mode (`checksum`|`strict`|`0`) and the
+daily auto-check. The System page also shows which config keys the
+newest defaults ship that your live `nmc.conf` doesn't set (*New Config
+Options*), and hosts **API token** management: **Generate** creates a
+read-only bearer token for monitoring, **Clear** removes it.
 
 **Release channel.** By default the updater tracks the repo's newest
-GitHub release/tag rather than `main` — a tag like `1.0.5` triggers the
-`release` workflow, which publishes a reproducible tarball + `.sha256`
-(+ `.sig` when the maintainer sets up signing, below). Release notes
+GitHub release/tag rather than `main` — pushing a tag like `1.1.0`
+triggers the `release` workflow, which publishes a reproducible tarball
++ `.sha256` (+ `.sig` when signing is set up, below). Release notes
 appear in the update card. If no releases exist it falls back to
-tracking `[update] branch`'s `VERSION` file. `[update] verify` in
-`nmc.conf` controls checking: `checksum` (default), `strict` (refuse
-unverifiable payloads) or `0`.
+tracking the `VERSION` file on `[update] branch`.
 
 **Signed updates (optional).** Generate a keypair once:
 
@@ -209,7 +220,7 @@ the private key out of the repo and store it as the
 a signature every update verifies with `openssl`. A bad signature
 always fails the update; no pubkey shipped = signature checks skipped.
 
-## �🔔 Alerts
+## 🔔 Alerts
 
 UPS events — power loss/restore, low battery, overload, comms loss,
 self-test results, alarms — can be pushed to **Discord**, **Teams**, any
@@ -227,11 +238,6 @@ JSON endpoints on the management UI (behind the web login unless noted):
 
 - `GET /api/v1/vars` — live UPS variables (status, load, battery…)
 - `GET /api/v1/commands` — instant commands the UPS exposes
-
-`/api/v1/*` and `/metrics` also accept a read-only bearer token — set
-`api_token` under `[web]` in `nmc.conf` and send
-`Authorization: Bearer <token>` (Nagios/Prometheus-friendly; no web
-session needed).
 - `GET /datalog.json` — logged power-quality samples
 - `GET /events.txt`, `GET /data.txt` — raw event/data logs, same as a real NMC
 - `GET /metrics` — Prometheus exposition (localhost or logged-in)
@@ -239,6 +245,12 @@ session needed).
 - `GET /ca.crt` — download the generated CA to trust the self-signed cert
 - `GET /config/backup` — download `apc-nmc-config.tgz` (config + state + events)
 - `POST /config/restore` — restore a saved config bundle
+
+`/api/v1/*` and `/metrics` also accept a read-only bearer token —
+generate one from **About → System → Update Settings → API Token** (or
+set `api_token` under `[web]` in `nmc.conf`) and send
+`Authorization: Bearer <token>` (Nagios/Prometheus-friendly; no web
+session needed, changes apply without a restart).
 
 ## 🔐 Security
 
@@ -251,6 +263,11 @@ session needed).
   trusted/management network or firewall `3493` to your monitoring hosts
 - The web UI is self-signed; grab `/ca.crt` to pin trust instead of
   clicking through warnings
+- Updates verify a `sha256` checksum of the release tarball before
+  deploying, and `verify = strict` + a shipped signing pubkey make the
+  updater refuse unsigned or tampered payloads entirely
+- The API bearer token is read-only — it can query `/metrics` and
+  `/api/v1/*` but can't change anything or log in to the UI
 
 ## 📁 Repo layout
 
@@ -261,15 +278,18 @@ install.sh                  installer (payload = this repo)
 ├── docs/img/               README screenshots
 ├── usr/local/bin/          apc-nmc-web.py · apc-nmc-agent.py · web UI assets
 ├── usr/local/sbin/         apc-nmc-update.sh · firstboot-wizard.sh · watchdog/backup tools
-├── usr/lib/nut/apc_modbus  fallback prebuilt NUT driver (arm64)
+├── usr/lib/nut/apc_modbus  fallback prebuilt NUT driver (aarch64)
 ├── usr/local/lib/          fallback libmodbus.so.5 (runtime dep of apc_modbus)
 ├── vendor/                 NUT 2.8.5 + NUT libmodbus fork sources (built on target)
 ├── etc/nut/                NUT config templates (secrets generated, never shipped)
-├── etc/apc-nmc/            nmc.conf.default + public CA material
+├── etc/apc-nmc/            nmc.conf.default + optional update-signing pubkey
 ├── etc/systemd/system/     units, timers, hardening & OOM drop-ins
 ├── etc/logrotate.d/        agent/state log rotation
 ├── etc/sysctl.d/           panic-reboot + OOM tuning
-└── etc/argon/              optional Argon One fan daemon
+├── etc/argon/              optional Argon One fan daemon
+├── tests/                  pytest unit layer (version conf parsers, config writer)
+├── .github/workflows/      CI (lint + tests + real NUT build) · release automation
+└── .vscode/                ready-made lint/test/deploy/release tasks
 ```
 
 ## ❓ FAQ
