@@ -45,6 +45,7 @@ DATA_FILE = "/var/lib/apc-nmc/datalog.json"
 MAX_EVENTS = 400
 MAX_DATA = 1500              # ~25h at 60s sampling
 SESSION_TTL = 8 * 3600       # sliding
+SESSION_MAX = 7 * 86400      # absolute cap — polling must not live forever
 LOGIN_MAX_FAILS = 5
 LOGIN_LOCKOUT = 300          # seconds
 VERSION_FILE = "/etc/apc-nmc/version"
@@ -325,7 +326,12 @@ def conf_set(sec, key, value):
     tmp = CONF + ".tmp"
     with open(tmp, "w") as f:
         f.write("\n".join(out) + "\n")
-    os.chmod(tmp, 0o640)
+    try:
+        st = os.stat(CONF)      # keep the live file's mode + group —
+        os.chown(tmp, -1, st.st_gid)  # Debian-snmp needs group-read to
+        os.chmod(tmp, st.st_mode & 0o777)  # reach [upsd]/[snmp] creds
+    except OSError:
+        os.chmod(tmp, 0o640)
     os.replace(tmp, CONF)
     _cp.read(CONF)
 
@@ -369,11 +375,15 @@ def new_session(ip="", user=""):
 
 
 def get_session(tok):
+    now = time.time()
     with _sessions_lock:
         s = sessions.get(tok)
-        if s and s["exp"] > time.time():
+        if s and s["exp"] > now \
+                and now - s.get("created", 0) <= SESSION_MAX:
             old = s["exp"]
-            s["exp"] = time.time() + SESSION_TTL   # sliding renewal
+            # sliding renewal, but never past the absolute cap
+            s["exp"] = min(now + SESSION_TTL,
+                           s.get("created", now) + SESSION_MAX)
             if s["exp"] - old > 60:                # persist ~1/min max
                 _persist_sessions()
             return s
@@ -406,14 +416,30 @@ def web_password_ok(pw):
 
 def _user_ok(u, pw):
     """Primary web user, plus extra accounts from the [users] conf
-    section (name = password).  Proportionate multi-user auth in lieu
-    of RADIUS/LDAP (queued item D4)."""
+    section — value is either plaintext (legacy) or
+    `<salt_hex>$<pbkdf2_sha256_hex>`, the same format web_pass_hash
+    uses (generate: python3 -c 'import hashlib,secrets; s=
+    secrets.token_hex(16); print(s + "$" + hashlib.pbkdf2_hmac(
+    "sha256", b"PASS", bytes.fromhex(s), 200_000).hexdigest())').
+    Proportionate multi-user auth in lieu of RADIUS/LDAP (D4)."""
     if secrets.compare_digest(u, WEB_USER) and web_password_ok(pw):
         return True
     if _cp.has_section("users"):
         for name in set(_cp.options("users")) - set(_cp.defaults()):
-            if secrets.compare_digest(u, name) and \
-                    secrets.compare_digest(pw, _cp.get("users", name)):
+            if not secrets.compare_digest(u, name):
+                continue
+            stored = _cp.get("users", name)
+            salt, _, digest = stored.partition("$")
+            if digest:                      # hashed form
+                try:
+                    d = hashlib.pbkdf2_hmac(_PBKDF[0], pw.encode(),
+                                            bytes.fromhex(salt),
+                                            _PBKDF[1])
+                except ValueError:
+                    continue
+                if secrets.compare_digest(d.hex(), digest):
+                    return True
+            elif secrets.compare_digest(pw, stored):
                 return True
     return False
 
@@ -1283,6 +1309,14 @@ def nr(v):
     return v
 
 
+def msgbox(msg):
+    """Render a (css-class, text) flash banner — both parts are escaped;
+    `why=` text in post-redirect URLs lands here user-controlled."""
+    if not msg:
+        return ""
+    return '<div class="%s">%s</div>' % (esc(msg[0]), esc(msg[1]))
+
+
 # ============================================================ page frame
 _SVG = {
     "home": '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/><path d="M9 21v-6h6v6"/></svg>',
@@ -1666,7 +1700,7 @@ def _status_frags(d):
 
 def pg_status(d, msg: "str | tuple" = ""):
     fr = _status_frags(d)
-    m = '<div class="%s">%s</div>' % msg if msg else ""
+    m = msgbox(msg)
     return """<h1 class="page">UPS Status</h1>%s
 <div class="card"><h3>%s</h3><div class="pad"><table class="kv"><tbody id="stTop">%s</tbody></table>
 <form method="post" action="/status/battery" style="margin-top:14px"
@@ -1681,7 +1715,7 @@ def pg_status(d, msg: "str | tuple" = ""):
 
 
 def pg_control(d, msg: "str | tuple" = "", cmds=None):
-    m = '<div class="%s">%s</div>' % msg if msg else ""
+    m = msgbox(msg)
     cmds = cmds if cmds is not None else []
     can = set(cmds)
     opts = []
@@ -1776,7 +1810,7 @@ def outlet_groups(d):
 
 
 def pg_outlets(d, msg: "str | tuple" = ""):
-    m = '<div class="%s">%s</div>' % msg if msg else ""
+    m = msgbox(msg)
     groups = outlet_groups(d)
     rows = ""
     for g in groups:
@@ -1882,7 +1916,7 @@ outlet group.</p>
 
 def pg_tests(d, msg: "str | tuple" = ""):
     st = load_state()
-    m = '<div class="%s">%s</div>' % msg if msg else ""
+    m = msgbox(msg)
     result = d.get("ups.test.result") or \
         {1: "Passed", 2: "Failed", 3: "Invalid", 4: "In Progress"}.get(
             int(st.get("diag_result", 1)))
@@ -1976,7 +2010,7 @@ def _sessions_rows(d, cur_tok):
 
 def pg_config(d, msg: "str | tuple" = "", cur_tok=""):
     g = lambda k, dv: esc(str(cfg_get(k, dv)))
-    m = '<div class="%s">%s</div>' % msg if msg else ""
+    m = msgbox(msg)
     lowrt_tt = int(cfg_get("low_battery_runtime",
                            int(num(d, "battery.runtime.low", 120)
                                or 120) * 100))
@@ -2172,7 +2206,7 @@ the rest are kept on the management card.</p>""" % (
 
 def pg_events(d, msg=""):
     evs = load_events()
-    m = '<div class="%s">%s</div>' % msg if msg else ""
+    m = msgbox(msg)
     rows = "".join(
         "<tr data-sev='%s'><td><span class='dot %s'></span></td>"
         "<td>%s</td><td>%s</td><td>%s</td></tr>" % (
@@ -2267,7 +2301,7 @@ def pg_data():
 
 
 def pg_about(d, msg: "str | tuple" = ""):
-    m = '<div class="%s">%s</div>' % msg if msg else ""
+    m = msgbox(msg)
     try:
         with open("/sys/class/net/eth0/address") as f:
             mac = f.read().strip().upper()
@@ -2907,6 +2941,14 @@ def do_restore(blob):
             prev = f.read()
         with open(CONF + ".pre-restore", "wb") as f:
             f.write(prev)
+        # the snapshot holds the pre-restore secrets — match nmc.conf's
+        # owner/mode so the agent can read conf but the world cannot
+        try:
+            st = os.stat(CONF)
+            os.chown(CONF + ".pre-restore", -1, st.st_gid)
+            os.chmod(CONF + ".pre-restore", st.st_mode & 0o777)
+        except OSError:
+            os.chmod(CONF + ".pre-restore", 0o640)
     except OSError:
         pass
     with open(CONF, "wb") as f:
@@ -3020,17 +3062,17 @@ def do_battery_replaced():
     if pushed:
         log_event("UPS: Battery marked as replaced; install date "
                   "written to the UPS, battery statistics reset.")
-        return ("msg-ok", ("Battery marked as replaced &mdash; install "
+        return ("msg-ok", ("Battery marked as replaced — install "
                 "date written to the UPS, statistics reset."))
     if pushed is False:
         log_event("UPS: Battery marked as replaced; UPS did not update "
                   "its install date, battery statistics reset.", "warn")
-        return ("msg-ok", ("Battery marked as replaced &mdash; the UPS "
+        return ("msg-ok", ("Battery marked as replaced — the UPS "
                 "did not update its install date; recorded locally, "
                 "statistics reset."))
     log_event("UPS: Battery marked as replaced; install date recorded "
               "locally, battery statistics reset.")
-    return ("msg-ok", ("Battery marked as replaced &mdash; install date "
+    return ("msg-ok", ("Battery marked as replaced — install date "
             "recorded locally, statistics reset."))
 
 
@@ -3160,7 +3202,7 @@ def do_update_check():
         return ("msg-err", "Update check did not complete.")
     st = _load_json(UPDATE_STATE)
     if st.get("err"):
-        return ("msg-err", "Update check failed: %s" % esc(st["err"]))
+        return ("msg-err", "Update check failed: %s" % st["err"])
     if not st:
         return ("msg-err", "Update check produced no result.")
     if st.get("available"):
@@ -3445,16 +3487,14 @@ class H(BaseHTTPRequestHandler):
 
     def _api_ok(self):
         """Machine auth for monitoring endpoints: Authorization: Bearer
-        <token> (or ?api_token=) matching [web] api_token in nmc.conf."""
+        <token> matching [web] api_token in nmc.conf. Header-only — a
+        ?token= URL slot would leak credentials into browser history,
+        Referer headers and upstream access logs (SEC-026)."""
         token = cfg("web", "api_token", "")   # live read — settable in UI
         if not token:
             return False
         auth = self.headers.get("Authorization", "")
-        if auth.lower().startswith("bearer "):
-            tok = auth[7:].strip()
-        else:
-            tok = parse_qs(urlparse(self.path).query
-                           ).get("api_token", [""])[0]
+        tok = auth[7:].strip() if auth.lower().startswith("bearer ") else ""
         return bool(tok) and secrets.compare_digest(tok, token)
 
     def _send(self, code, body: "bytes | str" = b"",
@@ -3520,8 +3560,13 @@ class H(BaseHTTPRequestHandler):
         return d
 
     def _safe_next(self, f):
+        # strict path-charset whitelist: \ could collapse to // (open
+        # redirect via browser normalization), : and controls rejected;
+        # a leading // is a protocol-relative URL — never a safe next
         nxt = f.get("next", [""])[0]
-        if nxt.startswith("/") and not nxt.startswith("//"):
+        if nxt.startswith("/") and not nxt.startswith("//") \
+                and re.fullmatch(r"[A-Za-z0-9._~/%?&=+#@!,\-]*",
+                                 nxt[1:]):
             return nxt
         return "/home"
 
@@ -3614,6 +3659,12 @@ class H(BaseHTTPRequestHandler):
                 except Exception:
                     cmds = []
                 return self._send(200, json.dumps(cmds), "application/json")
+            # machine-readable routes get a real 401, not a login-HTML
+            # redirect that scripts would happily follow (ISS-045)
+            if p.startswith("/api/") or p.endswith((".json", ".txt")) \
+                    or p == "/config/backup":
+                return self._send(401, "authentication required\n",
+                                  "text/plain")
             return self._redir("/login?next=" + quote(p))
         if p == "/datalog.json":
             return self._send(200, json.dumps(load_data()),
@@ -3630,7 +3681,8 @@ class H(BaseHTTPRequestHandler):
                         pass
             return self._send(200, buf.getvalue(), "application/gzip",
                               {"Content-Disposition":
-                               "attachment; filename=apc-nmc-config.tgz"})
+                               "attachment; filename=apc-nmc-config.tgz",
+                               "Cache-Control": "no-store"})
         if p == "/about/update/progress":
             # streamed log for the apply page — pos is a byte offset so
             # each poll only carries new output. pos=-1 = first poll:

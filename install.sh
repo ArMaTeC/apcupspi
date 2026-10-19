@@ -300,6 +300,9 @@ EOF
 # nmc.conf seeded from the sanitized template; the wizard patches it.
 [ -f /etc/apc-nmc/nmc.conf ] || cp /etc/apc-nmc/nmc.conf.default /etc/apc-nmc/nmc.conf
 chmod 640 /etc/apc-nmc/nmc.conf 2>/dev/null || true
+# the pass_persist agent runs as Debian-snmp and reads [upsd]/[snmp] creds
+# from this file — without group-read, SNMP SETs and traps silently break
+chgrp Debian-snmp /etc/apc-nmc/nmc.conf 2>/dev/null || true
 
 # software version stamp, used by the update check (About > System)
 install -D -m 0644 "$SRC/VERSION" /etc/apc-nmc/version 2>/dev/null || true

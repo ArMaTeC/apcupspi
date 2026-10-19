@@ -246,6 +246,10 @@ EOF
             exit 1
         fi
         say "  verified payload signature"
+    elif [ "$VERIFY" = strict ] && [ -f "$PUBKEY" ]; then
+        status failed "no signature available"
+        say "FAIL: release is unsigned (verify=strict, signing key installed)"
+        exit 1
     fi
     if ! tar -xzf "$work/src.tgz" -C "$work"; then
         status failed "extract failed"

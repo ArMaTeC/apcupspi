@@ -37,9 +37,11 @@ yesno() { # $1=text $2=height (optional)
 }
 
 ini_set() { # file section key value — write an ini key via python3
-    python3 - "$1" "$2" "$3" "$4" <<'PY'
-import configparser, sys
-f, s, k, v = sys.argv[1:5]
+            # (value via env so it never lands in /proc/*/cmdline)
+    INI_VAL=$4 python3 - "$1" "$2" "$3" <<'PY'
+import configparser, os, sys
+f, s, k = sys.argv[1:4]
+v = os.environ["INI_VAL"]
 cp = configparser.ConfigParser()
 cp.optionxform = str
 cp.read(f)
@@ -55,11 +57,12 @@ esc_sed() { printf '%s' "$1" | sed 's/[\&/|]/\\&/g'; }
 
 upsd_set_pw() { # $1=user $2=password — upsd.users is not strict INI (bare
                 # directives like "upsmon primary" break ConfigParser)
-    awk -v sec="[$1]" -v pw="$2" '
+                # password via env so it never lands in /proc/*/cmdline
+    UPW=$2 awk -v sec="[$1]" '
         $0 == sec { insec=1; print; next }
         /^\[/   { insec=0 }
         insec && match($0, /^[[:space:]]*password[[:space:]]*=/) {
-            print substr($0, 1, RLENGTH) " " pw; found=1; next
+            print substr($0, 1, RLENGTH) " " ENVIRON["UPW"]; found=1; next
         }
         { print }
         END { if (!found) exit 1 }
@@ -98,10 +101,12 @@ ask_url() { # $1=prompt — non-empty http(s):// URL (matches the web UI's rule)
 }
 
 state_set() { # key value — write cfg.<key> into state.json with the same
-              # lock + permissions the web app uses
-    python3 - "$STATE_FILE" "$1" "$2" <<'PY'
+              # lock + permissions the web app uses (value via env — argv
+              # is world-readable in /proc/*/cmdline while this runs)
+    ST_VAL=$2 python3 - "$STATE_FILE" "$1" <<'PY'
 import fcntl, grp, json, os, sys
-path, key, val = sys.argv[1:4]
+path, key = sys.argv[1:3]
+val = os.environ["ST_VAL"]
 os.makedirs(os.path.dirname(path), exist_ok=True)
 with open(path + ".lock", "a") as lf:
     try:
@@ -280,7 +285,17 @@ sed -i -E "s|^([[:space:]]*driver[[:space:]]*=[[:space:]]*).*|\1$(esc_sed "$DRIV
 sed -i -E "s|^([[:space:]]*port[[:space:]]*=[[:space:]]*).*|\1$(esc_sed "$UPORT")|" "$UPS_CONF"
 upsd_set_pw upsmon "$NUTPW" || echo "!! warning: could not set upsmon password in upsd.users" >&2
 upsd_set_pw admin  "$ADMPW" || echo "!! warning: could not set admin password in upsd.users" >&2
-sed -i -E "s|^MONITOR[[:space:]].*|$(esc_sed "MONITOR ${UPS}@localhost 1 upsmon ${NUTPW} primary")|" "$UPSMON_CONF"
+# NUTPW travels via env, not argv — sed/python cmdlines are world-readable
+MONLINE="MONITOR ${UPS}@localhost 1 upsmon ${NUTPW} primary" \
+python3 - "$UPSMON_CONF" <<'PY'
+import os, re, sys
+p = sys.argv[1]
+with open(p) as f:
+    s = f.read()
+s = re.sub(r"(?m)^MONITOR[ \t].*", lambda m: os.environ["MONLINE"], s)
+with open(p, "w") as f:
+    f.write(s)
+PY
 if [ -n "$CUR_UPS" ] && [ "$CUR_UPS" != "$UPS" ]; then
     systemctl disable "nut-driver@$CUR_UPS" 2>/dev/null || true
     systemctl enable  "nut-driver@$UPS"     2>/dev/null || true
@@ -333,11 +348,14 @@ done
 if [ $NOTIFY -eq 1 ] && yesno "Send a test alert on the configured channel(s) now?\n\nNeeds working network/DNS — may not be up yet on first boot\n(failures are harmless; test again from the web UI later)."; then
     TEST_RES=""
     ntest() { # $1=channel $2=url $3=json — echoes "name: sent | FAILED ..."
+              # webhook URL via -K- config on stdin — it embeds a secret
+              # token, and argv is world-readable in /proc/*/cmdline
         local e
-        if e=$(curl -fsS -o /dev/null -m 8 -X POST \
+        if e=$(printf 'url = "%s"\n' "$2" | curl -fsS -o /dev/null -m 8 \
+                 -X POST -K- \
                  -H 'Content-Type: application/json' \
                  -H 'User-Agent: apc-nmc/test (UPS monitor)' \
-                 -d "$3" "$2" 2>&1); then
+                 -d "$3" 2>&1); then
             echo "$1: sent"
         else
             echo "$1: FAILED — $(echo "$e" | tail -1)"
@@ -363,11 +381,13 @@ if [ $NOTIFY -eq 1 ] && yesno "Send a test alert on the configured channel(s) no
         fi
     fi
     if [ -n "$SMTP_HOST" ]; then
-        if python3 - "$SMTP_HOST" "$SMTP_PORT" "$SMTP_TLS" "$SMTP_USER" \
-                  "$SMTP_PASS" "$SMTP_FROM" "$SMTP_TO" <<'PY' 2>/tmp/.ntest_smtp
-import smtplib, sys
+        if SMTPPW=$SMTP_PASS python3 - "$SMTP_HOST" "$SMTP_PORT" \
+                  "$SMTP_TLS" "$SMTP_USER" "$SMTP_FROM" "$SMTP_TO" \
+                  <<'PY' 2>/tmp/.ntest_smtp
+import os, smtplib, sys
 from email.message import EmailMessage
-host, port, tls, user, pw, frm, to = sys.argv[1:8]
+host, port, tls, user, frm, to = sys.argv[1:7]
+pw = os.environ["SMTPPW"]
 m = EmailMessage()
 m["Subject"] = "[APC UPS] test alert"
 m["From"] = frm; m["To"] = to

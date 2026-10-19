@@ -125,6 +125,12 @@ if [ $CLEAN -eq 1 ]; then
         "/root/.ssh/authorized_keys" "/root/.bash_history"
         # additional privacy/data scrub
         "/root/.gitconfig" "/root/.ssh/known_hosts"
+        # appliance key material — TLS private key + device CA; regenerated
+        # on first boot (wizard cert prompt / CA-less), never published
+        "/etc/apc-nmc/nmc.key" "/etc/apc-nmc/nmc.pem" "/etc/apc-nmc/ca"
+        # network secrets: WiFi PSKs (nm keyfiles) / netplan yaml —
+        # empty dirs are recreated below so first boot can re-seed
+        "/etc/NetworkManager/system-connections" "/etc/netplan"
         "/var/lib/apc-nmc/*" "/var/lib/cloud/*"
         "/var/log/journal/*" "/var/log/*.gz" "/var/log/*.[0-9]"
         "/var/log/syslog*" "/var/log/messages*" "/var/log/auth.log*"
@@ -146,11 +152,16 @@ if [ $CLEAN -eq 1 ]; then
     echo ">> Sanitizing image for publication..."
     cp -L /etc/skel/.bashrc "$IMGROOT/root/.bashrc"
     : > "$IMGROOT/root/.bash_history"
-    mkdir -p "$IMGROOT/var/lib/apc-nmc" "$IMGROOT/var/log/journal"
+    mkdir -p "$IMGROOT/var/lib/apc-nmc" "$IMGROOT/var/log/journal" \
+        "$IMGROOT/etc/NetworkManager/system-connections" \
+        "$IMGROOT/etc/netplan" "$IMGROOT/etc/apc-nmc/ca"
     : > "$IMGROOT/etc/machine-id"
     rm -f "$IMGROOT"/etc/ssh/ssh_host_*
 
-    sed -i -E 's/(password[[:space:]]*=[[:space:]]*).*/\1CHANGE_ME_ON_FIRST_BOOT/i' \
+    # every secret-bearing key, not just "password" — api_token is a live
+    # bearer credential, webhook URLs/trapcommunity are credentials too
+    sed -i -E 's/^([[:space:]]*(password|api_token|webhook|trapcommunity|smtp_pass)[[:space:]]*=[[:space:]]*).*/\1CHANGE_ME_ON_FIRST_BOOT/i;
+               s/^([[:space:]]*hook[[:space:]]*=[[:space:]]*).*/\1/i' \
         "$IMGROOT/etc/apc-nmc/nmc.conf" "$IMGROOT/etc/nut/upsd.users" 2>/dev/null || true
     sed -i -E 's/^(MONITOR[[:space:]]+\S+[[:space:]]+[0-9]+[[:space:]]+\S+[[:space:]]+)\S+/\1CHANGE_ME_ON_FIRST_BOOT/' \
         "$IMGROOT/etc/nut/upsmon.conf" 2>/dev/null || true

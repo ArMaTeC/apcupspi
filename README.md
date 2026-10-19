@@ -150,7 +150,7 @@ Runs at the end of the install, and can be re-run any time via
 | Port | Service | Purpose |
 | ------ | --------- | --------- |
 | `443/tcp` | `apc-nmc-web` | HTTPS management UI (`80` redirects) |
-| `3493/tcp` | `nut-server` (`upsd`) | NUT network daemon — monitor remotely |
+| `3493/tcp` | `nut-server` (`upsd`) | NUT daemon — loopback-only by default |
 | `161/udp` | `snmpd` | SNMP — PowerNet-MIB subtree |
 | `22/tcp` | `sshd` | Admin access |
 
@@ -260,8 +260,10 @@ session needed, changes apply without a restart).
   cookies with CSRF tokens on every POST
 - All config/secrets (`upsd.users`, `nmc.conf`, state) are generated at
   install/wizard time — nothing secret ships in this repo
-- `upsd` listens on all interfaces for remote monitoring — keep the box on a
-  trusted/management network or firewall `3493` to your monitoring hosts
+- `upsd` binds loopback-only by default — its auth is plaintext and the
+  configured users can issue power-off commands. For remote upsmon
+  monitoring, add a LAN `LISTEN` to `upsd.conf` **and** a dedicated
+  `upsmon secondary` user — never expose the write-capable users off-box
 - The web UI is self-signed; grab `/ca.crt` to pin trust instead of
   clicking through warnings
 - Updates verify a `sha256` checksum of the release tarball before

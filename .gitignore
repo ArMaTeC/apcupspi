@@ -2,3 +2,9 @@
 __pycache__/
 pkg/
 apcupspi-*.tar.gz*
+
+# secrets — config templates live in etc/, never real env/key material
+.env
+.env.*
+*.pem
+*.key

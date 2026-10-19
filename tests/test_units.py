@@ -37,6 +37,15 @@ def test_esc():
     assert web.esc('<a href="x">&') == '&lt;a href=&quot;x&quot;&gt;&amp;'
 
 
+def test_msgbox_escapes_why():
+    """The ?why= query param is user-controlled and must not reach HTML raw."""
+    out = web.msgbox(("msg-err", '<script>alert(1)</script>'))
+    assert "<script>" not in out
+    assert "&lt;script&gt;" in out
+    assert out.startswith('<div class="msg-err">')
+    assert web.msgbox("") == ""
+
+
 def test_num():
     assert web.num({"a": "1.5"}, "a") == 1.5
     assert web.num({"a": "x"}, "a", 9) == 9

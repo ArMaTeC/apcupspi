@@ -7,3 +7,12 @@
     copytruncate
     su Debian-snmp Debian-snmp
 }
+
+/var/lib/apc-nmc/update.log {
+    weekly
+    rotate 4
+    compress
+    missingok
+    notifempty
+    copytruncate
+}
