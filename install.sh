@@ -139,6 +139,16 @@ build_nut_driver() {
     ldconfig
     echo ">> Building apc_modbus from NUT 2.8.5 source (a few minutes)..."
     tar -xzf "$SRC"/vendor/nut-2.8.5-src.tar.gz -C "$work" || return 1
+    # The vendored snapshot inverts the APC_VF_UNAVAILABLE test in
+    # _apc_modbus_setvar(), so every SET VAR is rejected as "not available"
+    # while upsd still ACKs it (battery.date writes silently do nothing).
+    # Re-apply the fix if the tarball is ever regenerated unpatched —
+    # see vendor/patches/apc_modbus-setvar-unavailable.patch.
+    if grep -q '!(apc_value->value_flags & APC_VF_UNAVAILABLE)' \
+            "$work"/nut-2.8.5/drivers/apc_modbus.c 2>/dev/null; then
+        sed -i 's/!(apc_value->value_flags & APC_VF_UNAVAILABLE)/(apc_value->value_flags \& APC_VF_UNAVAILABLE)/' \
+            "$work"/nut-2.8.5/drivers/apc_modbus.c || return 1
+    fi
     (cd "$work"/nut-2.8.5 \
         && _run_step "NUT: configure" "$work/build.log" \
             ./configure --with-drivers=apc_modbus --with-modbus+usb=yes \
