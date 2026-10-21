@@ -392,6 +392,12 @@ EOF
         *apc-nmc-agent*) systemctl restart snmpd \
                          && say "  restarted snmpd" ;;
     esac
+    # upsd only reads LISTEN at startup — a changed upsd.conf needs a
+    # full restart or the new bindings silently never take effect
+    case "$CHANGED" in
+        */etc/nut/upsd.conf*) systemctl restart nut-server \
+                              && say "  restarted nut-server" ;;
+    esac
     if [ "$DRIVER_CHG" = 1 ]; then
         systemctl restart 'nut-driver@*.service' 2>/dev/null \
             || systemctl restart nut-driver.target 2>/dev/null \
@@ -451,6 +457,7 @@ do_rollback() {
     ldconfig 2>/dev/null || true
     systemctl daemon-reload
     systemctl restart snmpd 2>/dev/null || true
+    systemctl restart nut-server 2>/dev/null || true
     systemctl restart 'nut-driver@*.service' 2>/dev/null \
         || systemctl restart nut-driver.target 2>/dev/null || true
 
