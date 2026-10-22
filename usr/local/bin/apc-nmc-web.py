@@ -79,7 +79,22 @@ CONTACT = cfg("device", "contact", "admin@localhost")
 NMC_MODEL = "AP9631"
 NMC_SERIAL = cfg("device", "nmc_serial", "5A2436E12345")
 NMC_FW = cfg("device", "nmc_fw", "v7.1.2")
-WEB_VER = "2.0"
+
+
+def installed_version():
+    """The real apcupspi release (VERSION file) — refreshed per call so the
+    UI always shows the installed version, not a build-time constant."""
+    for path in (VERSION_FILE,
+                 os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                              "..", "..", "..", "VERSION")):
+        try:
+            with open(path) as f:
+                v = f.read().strip()
+            if v:
+                return v
+        except OSError:
+            continue
+    return "?"          # install predates version stamping
 
 sessions = {}          # tok -> {"exp": ts, "csrf": str}
 _sessions_lock = threading.Lock()
@@ -336,6 +351,86 @@ def conf_set(sec, key, value):
     _cp.read(CONF)
 
 
+def conf_del(sec, key):
+    """Drop `key` lines from [sec] of nmc.conf — counterpart of conf_set
+    for removing entries (e.g. deleting a [users] account)."""
+    try:
+        with open(CONF) as f:
+            lines = f.read().splitlines()
+    except OSError:
+        return
+    key_re = re.compile(r"^\s*#?\s*" + re.escape(key) + r"\s*=")
+    out = []
+    cur = ""
+    for line in lines:
+        m = re.match(r"\s*\[\s*([^]]+)", line)
+        if m:
+            cur = m.group(1).strip()
+            out.append(line)
+            continue
+        if cur == sec and key_re.match(line):
+            continue                      # remove matching entries
+        out.append(line)
+    tmp = CONF + ".tmp"
+    with open(tmp, "w") as f:
+        f.write("\n".join(out) + "\n")
+    try:
+        st = os.stat(CONF)
+        os.chown(tmp, -1, st.st_gid)
+        os.chmod(tmp, st.st_mode & 0o777)
+    except OSError:
+        os.chmod(tmp, 0o640)
+    os.replace(tmp, CONF)
+    _cp.read(CONF)
+
+
+def _sysctl(*args):
+    try:
+        r = subprocess.run(["systemctl"] + list(args), capture_output=True,
+                           text=True, check=False, timeout=20)
+        return r.returncode, (r.stdout or "").strip()
+    except Exception:
+        return 1, ""
+
+
+def svc_state(name):
+    """-> (enabled, active) for a systemd unit."""
+    _rc, e = _sysctl("is-enabled", name)
+    _rc, a = _sysctl("is-active", name)
+    return e == "enabled", a == "active"
+
+
+def svc_apply(name, enable):
+    """Enable+start / disable+stop a unit; when already enabled a plain
+    restart applies fresh config."""
+    en, _act = svc_state(name)
+    if enable:
+        args = ("restart", name) if en else ("enable", "--now", name)
+    else:
+        args = ("disable", "--now", name) if en else ("stop", name)
+    rc, out = _sysctl(*args)
+    return rc == 0, out
+
+
+def secure_boot_status():
+    """Best-effort Raspberry Pi secure-boot state: Pi 5/CM4 signed boot
+    surfaces as a bootloader devicetree property; other platforms can't
+    do it and report n/a. Enabling requires OTP/eeprom changes that must
+    be done manually — see docs/secure-boot.md."""
+    for p in ("/proc/device-tree/chosen/bootloader/secure-boot",
+              ("/sys/firmware/devicetree/base/chosen/bootloader/"
+               "secure-boot")):
+        try:
+            with open(p, "rb") as f:
+                v = f.read(4).rstrip(b"\x00")
+            if v in (b"\x01", b"1"):
+                return "enabled"
+            return "disabled"
+        except OSError:
+            continue
+    return "not supported on this platform"
+
+
 # ============================================================ sessions
 def _persist_sessions():
     try:
@@ -360,7 +455,7 @@ def load_sessions():
                          if s.get("exp", 0) > now})
 
 
-def new_session(ip="", user=""):
+def new_session(ip="", user="", role="admin"):
     tok = secrets.token_hex(16)
     with _sessions_lock:
         # prune expired while we're here
@@ -369,7 +464,8 @@ def new_session(ip="", user=""):
             sessions.pop(t, None)
         sessions[tok] = {"exp": time.time() + SESSION_TTL,
                          "csrf": secrets.token_hex(16),
-                         "ip": ip, "created": time.time(), "user": user}
+                         "ip": ip, "created": time.time(), "user": user,
+                         "role": role}
         _persist_sessions()
     return tok
 
@@ -414,34 +510,163 @@ def web_password_ok(pw):
     return secrets.compare_digest(pw, cfg_get("web_pass", WEB_PASS))
 
 
-def _user_ok(u, pw):
-    """Primary web user, plus extra accounts from the [users] conf
-    section — value is either plaintext (legacy) or
-    `<salt_hex>$<pbkdf2_sha256_hex>`, the same format web_pass_hash
-    uses (generate: python3 -c 'import hashlib,secrets; s=
-    secrets.token_hex(16); print(s + "$" + hashlib.pbkdf2_hmac(
-    "sha256", b"PASS", bytes.fromhex(s), 200_000).hexdigest())').
-    Proportionate multi-user auth in lieu of RADIUS/LDAP (D4)."""
-    if secrets.compare_digest(u, WEB_USER) and web_password_ok(pw):
+USER_ROLES = ("admin", "device", "network", "readonly")
+
+# Per-role capabilities. GET sets restrict which pages each role may view;
+# POST prefixes restrict which actions it may run. admin = everything.
+ROLE_GETS = {
+    "device": ("/home", "/status/", "/control/", "/test/", "/log/",
+               "/about/system", "/about/host", "/about/nut",
+               "/about/update/progress",
+               "/events.txt", "/data.txt", "/datalog.json",
+               "/status.json", "/api/v1/", "/metrics"),
+    "network": ("/home", "/status/", "/config/", "/log/", "/about/",
+                "/events.txt", "/data.txt", "/datalog.json",
+                "/status.json", "/api/v1/", "/metrics"),
+    "readonly": None,                        # view everything
+}
+ROLE_POSTS = {
+    "device": ("/control/", "/test/diag", "/status/battery",
+               "/config/ups", "/config/outlets"),
+    "network": ("/config/notify", "/config/services",
+                "/config/firewall", "/config/dot1x"),
+    "readonly": (),
+}
+
+
+def _prefix_ok(path, prefixes):
+    for pre in prefixes:
+        if path == pre or (pre.endswith("/") and path.startswith(pre)) \
+                or path.startswith(pre + "/"):
+            return True
+    return False
+
+
+def role_get_ok(role, path):
+    if path in ("/", "/home.htm", "/NMC.htm", "/logoff"):
         return True
+    allow = ROLE_GETS.get(role)
+    return allow is None or _prefix_ok(path, allow)
+
+
+def role_post_ok(role, path):
+    return role == "admin" or _prefix_ok(path, ROLE_POSTS.get(role, ()))
+
+
+def _parse_user_cred(stored):
+    """[users] value -> (role, credential). New format is
+    `role:<salt>$<hash>` or `role:plaintext`; a bare value (no valid
+    role prefix) is a legacy full-access admin credential."""
+    head, sep, rest = stored.partition(":")
+    if sep and head.strip().lower() in USER_ROLES and rest:
+        return head.strip().lower(), rest
+    return "admin", stored
+
+
+def _cred_ok(stored, pw):
+    salt, _, digest = stored.partition("$")
+    if digest:                      # hashed form
+        try:
+            d = hashlib.pbkdf2_hmac(_PBKDF[0], pw.encode(),
+                                    bytes.fromhex(salt), _PBKDF[1])
+        except ValueError:
+            return False
+        return secrets.compare_digest(d.hex(), digest)
+    return secrets.compare_digest(pw, stored)
+
+
+# ------------------------------------------------------------- RADIUS
+def _radius_hide_pass(pw, secret, authenticator):
+    """RFC 2865 User-Password attribute: pad to 16-byte blocks, XOR with
+    md5(secret + authenticator) for the first block and md5(secret +
+    c_i-1) afterwards."""
+    raw = pw.encode()[:128]
+    if len(raw) % 16:
+        raw += b"\x00" * (16 - len(raw) % 16)
+    out = b""
+    prev = authenticator
+    for i in range(0, len(raw), 16):
+        b = hashlib.md5(secret + prev).digest()
+        out += bytes(x ^ y for x, y in zip(raw[i:i + 16], b))
+        prev = out[i:i + 16]
+    return out
+
+
+def _radius_attr(t, val):
+    return bytes((t, len(val) + 2)) + val
+
+
+def radius_auth(user, pw):
+    """PAP Access-Request against [radius] server. Returns the configured
+    default role on Access-Accept, None otherwise. Only runs when local
+    auth failed — RADIUS never shadows local accounts."""
+    if cfg("radius", "enabled", "0") not in ("1", "yes", "true", "on"):
+        return None
+    server = cfg("radius", "server", "").strip()
+    secret = cfg("radius", "secret", "").encode()
+    if not server or not secret or not pw:
+        return None
+    try:
+        port = int(cfg("radius", "port", "1812"))
+    except ValueError:
+        port = 1812
+    try:
+        timeout = float(cfg("radius", "timeout", "4"))
+    except ValueError:
+        timeout = 4
+    import struct
+    ident = secrets.randbelow(256)
+    req_auth = secrets.token_bytes(16)
+    attrs = (_radius_attr(1, user.encode()[:253])
+             + _radius_attr(2, _radius_hide_pass(pw, secret, req_auth)))
+    pkt = struct.pack("!BBH", 1, ident, 20 + len(attrs)) + req_auth + attrs
+    try:
+        fam, _, _, _, sa = socket.getaddrinfo(
+            server, port, proto=socket.IPPROTO_UDP)[0]
+        s = socket.socket(fam, socket.SOCK_DGRAM)
+        s.settimeout(timeout)
+        s.sendto(pkt, sa)
+        resp, _ = s.recvfrom(4096)
+        s.close()
+    except Exception:
+        log_event("NMC: RADIUS server %s unreachable." % server,
+                  notify=False)
+        return None
+    if len(resp) < 20:
+        return None
+    code, rid, rlen = struct.unpack("!BBH", resp[:4])
+    if rid != ident or rlen > len(resp):
+        return None
+    expect = hashlib.md5(resp[:4] + req_auth + resp[20:rlen] + secret) \
+        .digest()
+    if resp[4:20] != expect:
+        return None
+    if code == 2:                                # Access-Accept
+        role = cfg("radius", "role", "readonly").strip().lower()
+        return role if role in USER_ROLES else "readonly"
+    return None                                  # Access-Reject/other
+
+
+def user_auth(u, pw):
+    """-> role string or None. Primary web user is always admin; extra
+    accounts come from [users] as `name = [role:]credential` — value is
+    either plaintext (legacy) or `<salt_hex>$<pbkdf2_sha256_hex>`, the
+    same format web_pass_hash uses (generate: python3 -c 'import
+    hashlib,secrets; s=secrets.token_hex(16); print("admin:" + s + "$" +
+    hashlib.pbkdf2_hmac("sha256", b"PASS", bytes.fromhex(s),
+    200_000).hexdigest())'). Falls back to RADIUS when enabled."""
+    if secrets.compare_digest(u, WEB_USER) and web_password_ok(pw):
+        return "admin"
     if _cp.has_section("users"):
         for name in set(_cp.options("users")) - set(_cp.defaults()):
             if not secrets.compare_digest(u, name):
                 continue
-            stored = _cp.get("users", name)
-            salt, _, digest = stored.partition("$")
-            if digest:                      # hashed form
-                try:
-                    d = hashlib.pbkdf2_hmac(_PBKDF[0], pw.encode(),
-                                            bytes.fromhex(salt),
-                                            _PBKDF[1])
-                except ValueError:
-                    continue
-                if secrets.compare_digest(d.hex(), digest):
-                    return True
-            elif secrets.compare_digest(pw, stored):
-                return True
-    return False
+            role, cred = _parse_user_cred(_cp.get("users", name))
+            if _cred_ok(cred, pw):
+                return role
+            return None            # name matched, password didn't —
+                                   # don't leak it to the RADIUS backend
+    return radius_auth(u, pw)
 
 
 # ============================================================ event log
@@ -579,6 +804,7 @@ def notify_cfg():
         "min_sev": cfg_get("notify_min_sev",
                            cfg("notify", "min_sev", "warn") or "warn"),
         "syslog": cfg_get("notify_syslog", cfg("notify", "syslog", "")),
+        "syslog_insecure": cfg_get("notify_syslog_insecure", False),
         "webhook": cfg_get("notify_webhook", cfg("notify", "webhook", "")),
         "discord": cfg_get("notify_discord", ""),
         "discord_mention": cfg_get("notify_discord_mention", ""),
@@ -655,6 +881,24 @@ def _post_json(url, payload, timeout=5):
     urllib.request.urlopen(req, timeout=timeout).read()
 
 
+def _syslog_target(host):
+    """-> (scheme, host, port). 'local'/'/dev/log' = journald; a bare
+    host[:port] is UDP/514 (NMC-style); tcp:// and tls:// are the
+    RFC 5425 transports (defaults 601 / 6514)."""
+    h = host.strip()
+    for scheme, dport in (("tls://", 6514), ("tcp://", 601)):
+        if h.lower().startswith(scheme):
+            h = h[len(scheme):]
+            hp = h.rsplit(":", 1)
+            if len(hp) == 2 and hp[1].isdigit():
+                return scheme[:-3], hp[0].strip("[]"), int(hp[1])
+            return scheme[:-3], h.strip("[]"), dport
+    hp = h.rsplit(":", 1)
+    if len(hp) == 2 and hp[1].isdigit():
+        return "udp", hp[0].strip("[]"), int(hp[1])
+    return "udp", h.strip("[]"), 514
+
+
 def _send_syslog(host, text, sev):
     pri = {"crit": 130, "warn": 132, "info": 134}.get(sev, 134)
     pkt = ("<%d>apc-nmc: %s" % (pri, text)).encode()
@@ -663,12 +907,26 @@ def _send_syslog(host, text, sev):
         s.connect("/dev/log")
         s.send(pkt)
         s.close()
-    else:
-        hp = host.split(":")
-        addr = (hp[0], int(hp[1]) if len(hp) > 1 else 514)
+        return
+    scheme, addr, port = _syslog_target(host)
+    if scheme == "udp":
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.settimeout(2)
-        s.sendto(pkt, addr)
+        s.sendto(pkt, (addr, port))
+        s.close()
+        return
+    s = socket.create_connection((addr, port), 5)
+    if scheme == "tls":
+        if cfg_get("notify_syslog_insecure", False):
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+        else:
+            ctx = ssl.create_default_context()
+        s = ctx.wrap_socket(s, server_hostname=addr)
+    try:
+        s.sendall(str(len(pkt)).encode() + b" " + pkt)  # octet-counted
+    finally:
         s.close()
 
 
@@ -1346,7 +1604,8 @@ NAV = [
     ("Control", "/control/ups", "control",
      [("UPS Control", "/control/ups"),
       ("Outlet Groups", "/control/outlets")]),
-    ("Configuration", "/config/ups", "config", [("UPS", "/config/ups")]),
+    ("Configuration", "/config/ups", "config",
+     [("UPS", "/config/ups"), ("System", "/config/system")]),
     ("Tests", "/test/diag", "tests", [("Diagnostics", "/test/diag")]),
     ("Logs", "/log/event", "logs",
      [("Event Log", "/log/event"), ("Data Log", "/log/data"),
@@ -1466,16 +1725,17 @@ def page(title, body, d, path="", section="", leaf=""):
 <div class="ftr"><div><a href="/about/system">System</a> &middot;
 <a href="/about/network">Network</a> &middot;
 <a href="/log/event">Event Log</a></div>
-<div>UPS Network Management Card 2 &middot; %s &middot; Updated: %s</div>
+<div>UPS Network Management Pi &middot; %s &middot; Updated: %s</div>
 </div></main>
 </div>
 <script>%s</script>
 </body></html>""" % (
         _asset("theme.js"), esc(title), _asset("nmc.css"),
         esc(d.get("ups.model", "Smart-UPS")),
-        acls, esc(alabel), SUN, esc(WEB_USER),
+        acls, esc(alabel), SUN, esc(d.get("__uinfo", WEB_USER)),
         updbar, nav, mnav, crumb, body,
-        esc(NMC_FW), time.strftime("%m/%d/%Y at %H:%M"),
+        esc("v" + installed_version()),
+        time.strftime("%m/%d/%Y at %H:%M"),
         _asset("nmc.js"))
 
 
@@ -1493,16 +1753,17 @@ def login_page(err="", next_url="/home", locked=0):
 <div class="se-mark">SE</div>
 <div style="font-weight:bold;font-size:16px">APC <span style="font-weight:normal;color:var(--mut)">by</span> Schneider Electric</div></div>
 <h2>Log On</h2>
-<div class="sub">UPS Network Management Card 2</div>
+<div class="sub">UPS Network Management Pi</div>
 <form method="post" action="/login">
 <input type="hidden" name="next" value="%s">
 <label for="u">User Name</label><input id="u" name="u" autocomplete="username" autofocus>
 <label for="p">Password</label><input id="p" name="p" type="password" autocomplete="current-password">
 <button class="btn" id="logon">Log On &gt;&gt;</button></form>%s
 </div>
-<div class="loginfoot">APC by Schneider Electric &mdash; AOS %s</div>
+<div class="loginfoot">APC-UPS-Pi &mdash; v%s</div>
 </div></body></html>""" % (_asset("theme.js"), _asset("nmc.css"),
-                              esc(next_url), e, esc(NMC_FW))
+                              esc(next_url), e,
+                              esc(installed_version()))
 
 
 # ============================================================ pages
@@ -1648,10 +1909,16 @@ def _status_frags(d):
         top += kv("UPS Alarm",
                   '<span style="color:#b00020">%s</span>'
                   % esc(humanize(d["ups.alarm"])))
-    if (d.get("ups.beeper.status") or "").strip().lower() == "muted":
+    beep = (d.get("ups.beeper.status") or "").strip().lower()
+    if beep == "muted":
         top += kv("Audible Alarm",
                   "Muted" + (" &mdash; re-arms when the alarm clears"
                              if st.get("beeper_muted") else ""))
+    elif beep == "disabled":
+        top += kv("Audible Alarm",
+                  '<span style="color:#b00020">Off</span>')
+    elif beep:
+        top += kv("Audible Alarm", "On")
     obc = int(st.get("ob_count", 0) or 0)
     obs = int(st.get("total_ob_seconds", 0) or 0)
     if st.get("ob_since"):
@@ -1750,6 +2017,10 @@ def pg_control(d, msg: "str | tuple" = "", cmds=None):
         opts.append(("bypass", "Put UPS in Bypass", 0))
     if "beeper.mute" in can:
         opts.append(("mute", "Mute Beeper", 0))
+    if "beeper.enable" in can:
+        opts.append(("beep_on", "Turn Audible Alarm On", 0))
+    if "beeper.disable" in can:
+        opts.append(("beep_off", "Turn Audible Alarm Off", 0))
     radios = "".join(
         '<label class="f"><input type="radio" name="act" value="%s"%s> '
         '%s</label>' % (v, " checked" if first else "", esc(t))
@@ -1774,7 +2045,9 @@ def pg_control_confirm(d, act, skipdel, pcns):
     desc = {"reboot": "Reboot UPS", "off": "Turn UPS Off",
             "sleep": "Put UPS to Sleep", "on": "Turn UPS On",
             "bypass": "Put UPS in Bypass",
-            "mute": "Mute the UPS beeper"}.get(act, act)
+            "mute": "Mute the UPS beeper",
+            "beep_on": "Turn the audible alarm on",
+            "beep_off": "Turn the audible alarm off"}.get(act, act)
     impact = {
         "reboot": "The UPS will briefly remove and restore output power.",
         "off": "Output power will be removed and will NOT return "
@@ -1785,6 +2058,9 @@ def pg_control_confirm(d, act, skipdel, pcns):
                   "battery backup.",
         "mute": "Output power is unaffected; the audible alarm is "
                 "silenced until the next alarm condition.",
+        "beep_on": "The UPS beeper will sound on alarm conditions.",
+        "beep_off": "The UPS beeper will stay silent even during "
+                    "alarm conditions.",
     }.get(act, "")
     return """<h1 class="page">UPS Control</h1>
 <div class="card"><h3>Confirm</h3><div class="pad">
@@ -2108,7 +2384,8 @@ the stored value.</p>
 <form method="post" action="/config/notify"><table class="kv">
 %s
 <tr><td class="lbl">Minimum Severity</td><td><select name="nsev">%s</select></td></tr>
-<tr><td class="lbl">Syslog Target</td><td><input name="nsyslog" maxlength="64" value="%s" placeholder="local or host[:514]"></td></tr>
+<tr><td class="lbl">Syslog Target</td><td><input name="nsyslog" maxlength="64" value="%s" placeholder="local, host[:514], tcp:// or tls://host"></td></tr>
+<tr><td class="lbl"></td><td><label class="f" style="font-weight:normal"><input type="checkbox" name="nsysinsecure"%s> TLS: skip certificate verification</label></td></tr>
 %s%s%s%s
 <tr><td colspan="2"><b>E-mail (SMTP)</b></td></tr>
 <tr><td class="lbl">SMTP Host</td><td><input name="nsmtphost" maxlength="64" value="%s" placeholder="mail.example.com"></td></tr>
@@ -2132,6 +2409,7 @@ trigger; a fully unchecked row alerts nowhere.</span></td></tr>
 connector URL. Test buttons use the saved configuration &mdash; Apply
 changes first.</p></div></div>""" % (
         csrf_input(d), sevopts, esc(nc["syslog"]),
+        " checked" if nc["syslog_insecure"] else "",
         _secf("Webhook URL", "nwebhook", "webhook",
               "https://hooks.example.com/..."),
         _secf("Discord Webhook", "ndiscord", "discord",
@@ -2221,6 +2499,211 @@ the rest are kept on the management card.</p>""" % (
         _sessions_rows(d, cur_tok),
         csrf_input(d),
         json.dumps(d.get("__csrf", "")), _asset("config.js"))
+
+
+def pg_system(d, msg: "str | tuple" = ""):
+    """System & security configuration: user accounts, RADIUS, Modbus
+    TCP, FTP, firewall, 802.1X and secure-boot status."""
+    m = msgbox(msg)
+    admin = d.get("__role", "admin") == "admin"
+    csrf = csrf_input(d)
+
+    def ro():
+        return ("" if admin else
+                '<p class="note">Only administrator accounts can change '
+                'this section.</p>')
+
+    def sel(name, cur, opts):
+        o = "".join('<option value="%s"%s>%s</option>'
+                    % (v, " selected" if v == cur else "", esc(t))
+                    for v, t in opts)
+        return '<select name="%s">%s</select>' % (name, o)
+
+    def secf(name, cur, ph):
+        badge = (' <span class="note">(configured)</span>'
+                 ' <label class="f" style="font-weight:normal">'
+                 '<input type="checkbox" name="clr_%s"> clear</label>'
+                 % name) if cur else ""
+        return ('<input name="%s" type="password" autocomplete="off" '
+                'maxlength="128" placeholder="%s">%s'
+                % (name, esc(ph), badge))
+
+    # ---- user accounts -------------------------------------------------
+    urows = ('<tr><td>%s</td><td>admin</td><td>'
+             '<span class="note">primary account &mdash; password via '
+             'Configuration &rsaquo; UPS</span></td></tr>' % esc(WEB_USER))
+    if _cp.has_section("users"):
+        for name in sorted(set(_cp.options("users"))
+                           - set(_cp.defaults())):
+            role, _cred = _parse_user_cred(_cp.get("users", name))
+            rm = ""
+            if admin:
+                rm = ('<form method="post" action="/config/users" '
+                      'style="display:inline">%s'
+                      '<input type="hidden" name="act" value="del">'
+                      '<input type="hidden" name="uname" value="%s">'
+                      '<button class="btn sec">Remove</button></form>'
+                      % (csrf, esc(name)))
+            urows += ("<tr><td>%s</td><td>%s</td><td>%s</td></tr>"
+                      % (esc(name), esc(role), rm))
+    addform = ""
+    if admin:
+        addform = """<form method="post" action="/config/users"><table class="kv">
+%s<input type="hidden" name="act" value="add">
+<tr><td class="lbl">User Name</td><td><input name="uname" maxlength="32" required></td></tr>
+<tr><td class="lbl">Password</td><td><input name="upass" type="password" minlength="6" autocomplete="new-password" required></td></tr>
+<tr><td class="lbl">Role</td><td>%s</td></tr>
+</table><div style="margin-top:12px"><button class="btn">Add User</button></div>
+</form>""" % (csrf, sel("urole", "readonly",
+                      [(r, r.capitalize()) for r in USER_ROLES]))
+    ucard = """<div class="card"><h3>User Accounts</h3><div class="pad">
+<p class="mut" style="margin-top:0">Roles: <b>admin</b> full access;
+<b>device</b> UPS status, control and tests only; <b>network</b> network
+and notification configuration; <b>readonly</b> view only.</p>
+<table class="kv pgtbl"><tr><th style="text-align:left">User</th>
+<th style="text-align:left">Role</th><th></th></tr>%s</table>
+%s%s</div></div>""" % (urows, addform, ro())
+
+    # ---- RADIUS --------------------------------------------------------
+    r_en = cfg("radius", "enabled", "0") in ("1", "yes", "true", "on")
+    rcard = """<div class="card"><h3>RADIUS Authentication</h3><div class="pad">
+<p class="mut" style="margin-top:0">Fallback authentication for web
+logins &mdash; tried only when no local account matches (PAP over
+UDP/1812). RADIUS users get the configured role.
+Status: <b>%s</b></p>%s</div></div>""" % (
+        "enabled" if r_en else "disabled", (
+            """<form method="post" action="/config/radius"><table class="kv">
+%s
+<tr><td class="lbl">Enabled</td><td><input type="checkbox" name="r_en"%s></td></tr>
+<tr><td class="lbl">Server</td><td><input name="r_srv" maxlength="64" value="%s" placeholder="radius.example.com"></td></tr>
+<tr><td class="lbl">Port</td><td><input name="r_port" type="number" min="1" max="65535" value="%s"></td></tr>
+<tr><td class="lbl">Shared Secret</td><td>%s</td></tr>
+<tr><td class="lbl">Timeout (s)</td><td><input name="r_to" type="number" min="1" max="30" step="0.5" value="%s"></td></tr>
+<tr><td class="lbl">Assigned Role</td><td>%s</td></tr>
+</table><div style="margin-top:12px"><button class="btn">Apply</button></div>
+</form>""" % (
+            csrf, " checked" if r_en else "",
+            esc(cfg("radius", "server", "")),
+            esc(cfg("radius", "port", "1812")),
+            secf("r_secret", cfg("radius", "secret", ""), "shared secret"),
+            esc(cfg("radius", "timeout", "4")),
+            sel("r_role", cfg("radius", "role", "readonly").lower(),
+                [(r, r.capitalize()) for r in USER_ROLES]))
+        if admin else
+        '<p class="note">Only administrator accounts can change this '
+        'section.</p>'))
+
+    # ---- network services ----------------------------------------------
+    mb_en, mb_act = svc_state("apc-nmc-modbus.service")
+    ftp_en, ftp_act = svc_state("vsftpd.service")
+    ftppw = ""
+    try:
+        with open("/etc/apc-nmc/ftp-password") as f:
+            ftppw = f.read().strip()
+    except OSError:
+        pass
+    scard = """<div class="card"><h3>Network Services</h3><div class="pad">
+<h4 style="margin:0 0 8px">Modbus TCP (BMS integration)</h4>
+<p class="mut" style="margin-top:0">Serves the documented UPS register
+map (docs/modbus-registers.md) &mdash; status bits as discrete inputs,
+readings as input registers. Status: <b>%s / %s</b></p>
+<form method="post" action="/config/services">
+%s<input type="hidden" name="svc" value="modbus"><table class="kv">
+<tr><td class="lbl">Enabled</td><td><input type="checkbox" name="mb_en"%s></td></tr>
+<tr><td class="lbl">Bind Address</td><td><input name="mb_bind" maxlength="40" value="%s" placeholder="0.0.0.0"></td></tr>
+<tr><td class="lbl">Port</td><td><input name="mb_port" type="number" min="1" max="65535" value="%s"></td></tr>
+<tr><td class="lbl">Unit Identifier</td><td><input name="mb_unit" type="number" min="1" max="247" value="%s"></td></tr>
+<tr><td class="lbl">Write Access</td><td><label class="f" style="font-weight:normal"><input type="checkbox" name="mb_write"%s> allow UPS commands via the command register/coils</label></td></tr>
+</table><div style="margin-top:12px"><button class="btn">Apply</button></div>
+</form>
+<h4 style="margin:22px 0 8px">FTP Server</h4>
+<p class="mut" style="margin-top:0">vsftpd serving a chrooted
+<code>nmcftp</code> account at <code>/var/lib/apc-nmc/ftp</code>.
+Status: <b>%s / %s</b>%s</p>
+<form method="post" action="/config/services">
+%s<input type="hidden" name="svc" value="ftp"><table class="kv">
+<tr><td class="lbl">Enabled</td><td><input type="checkbox" name="ftp_en"%s></td></tr>
+</table><div style="margin-top:12px"><button class="btn">Apply</button></div>
+</form></div></div>""" % (
+        "enabled" if mb_en else "disabled",
+        "active" if mb_act else "stopped",
+        csrf, " checked" if mb_en else "",
+        esc(cfg("modbus", "bind", "0.0.0.0")),
+        esc(cfg("modbus", "port", "502")),
+        esc(cfg("modbus", "unit", "1")),
+        " checked" if cfg("modbus", "allow_write", "0")
+        in ("1", "yes", "true", "on") else "",
+        "enabled" if ftp_en else "disabled",
+        "active" if ftp_act else "stopped",
+        ("<br>Login: <code>nmcftp</code> &mdash; password <code>%s</code>"
+         % esc(ftppw)) if ftppw and admin else "",
+        csrf, " checked" if ftp_en else "")
+
+    # ---- firewall -------------------------------------------------------
+    fw_en, fw_act = svc_state("apc-nmc-firewall.service")
+    fwcard = """<div class="card"><h3>Firewall</h3><div class="pad">
+<p class="mut" style="margin-top:0">nftables input filter. SSH (22),
+HTTP/S (80/443), SNMP (161) and mDNS (5353) are always allowed; list
+extra ports to open and, optionally, the only CIDRs allowed to reach
+any service. Status: <b>%s / %s</b></p>
+<form method="post" action="/config/firewall"><table class="kv">
+%s
+<tr><td class="lbl">Enabled</td><td><input type="checkbox" name="fw_en"%s></td></tr>
+<tr><td class="lbl">Extra TCP Ports</td><td><input name="fw_tcp" maxlength="128" value="%s" placeholder="502 3493"></td></tr>
+<tr><td class="lbl">Extra UDP Ports</td><td><input name="fw_udp" maxlength="128" value="%s" placeholder=""></td></tr>
+<tr><td class="lbl">Allowed Sources</td><td><input name="fw_from" maxlength="256" value="%s" placeholder="192.168.1.0/24 10.0.0.5/32 (empty = any)"></td></tr>
+</table><div style="margin-top:12px"><button class="btn">Apply</button></div>
+</form></div></div>""" % (
+        "enabled" if fw_en else "disabled",
+        "active" if fw_act else "stopped",
+        csrf, " checked" if fw_en else "",
+        esc(cfg("firewall", "allow_tcp", "")),
+        esc(cfg("firewall", "allow_udp", "")),
+        esc(cfg("firewall", "allow_from", "")))
+
+    # ---- 802.1X ---------------------------------------------------------
+    dx_en, dx_act = svc_state("apc-nmc-dot1x.service")
+    dxcard = """<div class="card"><h3>Wired 802.1X (EAPoL)</h3><div class="pad">
+<p class="mut" style="margin-top:0">Port authentication on the wired
+interface via wpa_supplicant. Status: <b>%s / %s</b></p>
+<form method="post" action="/config/dot1x"><table class="kv">
+%s
+<tr><td class="lbl">Enabled</td><td><input type="checkbox" name="x_en"%s></td></tr>
+<tr><td class="lbl">Interface</td><td><input name="x_if" maxlength="15" value="%s"></td></tr>
+<tr><td class="lbl">EAP Method</td><td>%s</td></tr>
+<tr><td class="lbl">Identity</td><td><input name="x_id" maxlength="64" value="%s"></td></tr>
+<tr><td class="lbl">Password (PEAP)</td><td>%s</td></tr>
+<tr><td class="lbl">Phase 2</td><td><input name="x_ph2" maxlength="64" value="%s" placeholder="auth=MSCHAPV2"></td></tr>
+<tr><td class="lbl">CA Certificate</td><td><input name="x_ca" maxlength="128" value="%s" placeholder="/etc/apc-nmc/ca/ca.crt"></td></tr>
+<tr><td class="lbl">Client Certificate (TLS)</td><td><input name="x_cc" maxlength="128" value="%s"></td></tr>
+<tr><td class="lbl">Private Key (TLS)</td><td><input name="x_pk" maxlength="128" value="%s"></td></tr>
+<tr><td class="lbl">Key Password</td><td>%s</td></tr>
+</table><div style="margin-top:12px"><button class="btn">Apply</button></div>
+</form></div></div>""" % (
+        "enabled" if dx_en else "disabled",
+        "active" if dx_act else "stopped",
+        csrf, " checked" if dx_en else "",
+        esc(cfg("dot1x", "iface", "eth0")),
+        sel("x_eap", cfg("dot1x", "eap", "PEAP").upper(),
+            [(e, e) for e in ("PEAP", "TTLS", "TLS", "FAST")]),
+        esc(cfg("dot1x", "identity", "")),
+        secf("x_pass", cfg("dot1x", "password", ""), "password"),
+        esc(cfg("dot1x", "phase2", "")),
+        esc(cfg("dot1x", "ca_cert", "")),
+        esc(cfg("dot1x", "client_cert", "")),
+        esc(cfg("dot1x", "private_key", "")),
+        secf("x_pkpass", cfg("dot1x", "private_key_pass", ""),
+             "key password"))
+
+    sb = secure_boot_status()
+    sbcard = """<div class="card"><h3>Secure Boot</h3><div class="pad">
+<table class="kv"><tr><td class="lbl">Status</td><td>%s</td></tr></table>
+<p class="note">Signed boot on Raspberry Pi requires one-time eeprom/OTP
+provisioning by hand &mdash; see docs/secure-boot.md. It cannot be
+enabled from this interface.</p></div></div>""" % esc(sb)
+
+    return """<h1 class="page">System Configuration</h1>%s
+%s%s%s%s%s%s""" % (m, ucard, rcard, scard, fwcard, dxcard, sbcard)
 
 
 def pg_events(d, msg=""):
@@ -2344,11 +2827,12 @@ def pg_about(d, msg: "str | tuple" = ""):
         ("Model", NMC_MODEL), ("Serial Number", NMC_SERIAL),
         ("Hardware Revision", "05"), ("MAC Address", mac),
         ("Manufacture Date", "04/17/2024"),
-        ("Application Module", "sumx " + NMC_FW),
-        ("APC OS (AOS)", NMC_FW), ("Boot Monitor", "v1.0.9"),
+        ("Application Module",
+         "apcupspi v%s" % installed_version()),
+        ("APC OS (AOS)", NMC_FW + " (emulated AP9631 identity)"),
+        ("Boot Monitor", "v1.0.9"),
         ("NMC Uptime", up),
-        ("Host", "Raspberry Pi &mdash; Linux %s" % kernel),
-        ("Web Emulator", "apc-nmc-web %s (NUT bridge)" % WEB_VER)])
+        ("Host", "Raspberry Pi &mdash; Linux %s" % kernel)])
     dev = "".join(kv(a, esc(b)) for a, b in [
         ("Model", d.get("ups.model", "?")),
         ("Serial Number", d.get("ups.serial", "?")),
@@ -2713,13 +3197,23 @@ def pg_host():
         pass
     svcs = ""
     for s in ("apc-nmc-web", "snmpd", "nut-server",
-              "nut-driver@myups", "nut-monitor"):
+              "nut-driver@myups", "nut-monitor", "apc-nmc-modbus",
+              "apc-nmc-firewall", "apc-nmc-dot1x", "vsftpd"):
         try:
             r = subprocess.run(["systemctl", "is-active", s],
                                capture_output=True, text=True,
                                timeout=5, check=False).stdout.strip() or "?"
+            en = subprocess.run(["systemctl", "is-enabled", s],
+                                capture_output=True, text=True,
+                                timeout=5, check=False).stdout.strip()
         except Exception:
-            r = "?"
+            r, en = "?", ""
+        if r != "active" and en in ("disabled", "masked", ""):
+            # opt-in service deliberately off — not a fault
+            svcs += ("<tr><td class='lbl'>%s</td><td>"
+                     "<span class='note'>%s</span></td></tr>"
+                     % (s, esc(r if r != "?" else "not installed")))
+            continue
         cls = {"active": "ok", "inactive": "warn",
                "failed": "crit"}.get(r, "warn")
         svcs += ("<tr><td class='lbl'>%s</td><td><span class='state st-%s'>"
@@ -2731,6 +3225,13 @@ manages &mdash; its own health matters.</p>
 <table class="kv">%s</table></div></div>
 <div class="card"><h3>Services</h3><div class="pad">
 <table class="kv">%s</table></div></div>""" % (rows, svcs)
+
+
+def pg_403():
+    return """<h1 class="page">Access Denied</h1>
+<div class="card"><div class="pad">
+<p>Your account's role does not allow access to this page.</p>
+<p><a class="btn sec" href="/home">Return to Home</a></p></div></div>"""
 
 
 def pg_404():
@@ -2922,6 +3423,14 @@ def do_control(act, skipdel, pcns):
         if r.startswith("OK"):
             log_event("UPS: Beeper muted via the network management card.")
         return r
+    if act in ("beep_on", "beep_off"):
+        r = ups_cmd("beeper.%s" % ("enable" if act == "beep_on"
+                                   else "disable"))
+        if r.startswith("OK"):
+            log_event("UPS: Audible alarm turned %s via the network "
+                      "management card."
+                      % ("on" if act == "beep_on" else "off"))
+        return r
     return "ERR INVALID"
 
 
@@ -3111,14 +3620,6 @@ def do_battery_replaced():
 
 
 # ============================================================ software update
-def installed_version():
-    try:
-        with open(VERSION_FILE) as f:
-            return f.read().strip() or "?"
-    except OSError:
-        return "?"          # install predates version stamping
-
-
 def _load_json(path):
     try:
         with open(path) as f:
@@ -3437,6 +3938,7 @@ def do_notify_config(form):
     # partial POST (API caller, stale page) must not clear config.
     if "nsyslog" in form:
         cfg_set("notify_syslog", v("nsyslog")[:64])
+        cfg_set("notify_syslog_insecure", bool(form.get("nsysinsecure")))
 
     for name, key in (("nwebhook", "notify_webhook"),
                       ("ndiscord", "notify_discord"),
@@ -3540,6 +4042,174 @@ def do_notify_test(ch):
     return ("msg-ok", "Test notification sent to %s." % ch)
 
 
+# ============================================================ system config
+def do_users(form):
+    act = form.get("act", [""])[0]
+    name = form.get("uname", [""])[0].strip().lower()
+    if act == "del":
+        if not _cp.has_section("users") or \
+                name not in _cp.options("users"):
+            return ("msg-err", "No such user.")
+        conf_del("users", name)
+        log_event("NMC: User account %s removed." % name)
+        return ("msg-ok", "User %s removed." % name)
+    if act != "add":
+        return ("msg-err", "Unknown action.")
+    if not re.fullmatch(r"[a-z0-9_.\-]{1,32}", name):
+        return ("msg-err", "User name: a-z 0-9 _ . - only, max 32.")
+    if secrets.compare_digest(name, WEB_USER.lower()):
+        return ("msg-err", "That name is the primary account.")
+    pw = form.get("upass", [""])[0]
+    if len(pw) < 6:
+        return ("msg-err", "Password must be at least 6 characters.")
+    role = form.get("urole", [""])[0].lower()
+    if role not in USER_ROLES:
+        return ("msg-err", "Invalid role.")
+    salt = secrets.token_hex(16)
+    cred = "%s:%s$%s" % (role, salt, hashlib.pbkdf2_hmac(
+        _PBKDF[0], pw.encode(), bytes.fromhex(salt), _PBKDF[1]).hex())
+    conf_set("users", name, cred)
+    log_event("NMC: User account %s added with role %s." % (name, role))
+    return ("msg-ok", "User %s added (%s)." % (name, role))
+
+
+def do_radius(form):
+    def v(k):
+        return form.get(k, [""])[0].strip()
+    errs = []
+    srv = v("r_srv")
+    if srv and not re.fullmatch(r"[A-Za-z0-9.\-]{1,64}", srv):
+        errs.append("server: invalid hostname")
+    port = v("r_port") or "1812"
+    if not re.fullmatch(r"\d{1,5}", port) or not 1 <= int(port) <= 65535:
+        errs.append("port: invalid")
+    role = v("r_role")
+    if role not in USER_ROLES:
+        errs.append("role: invalid")
+    try:
+        to = float(v("r_to") or 4)
+        if not 0.5 <= to <= 30:
+            errs.append("timeout: out of range")
+    except ValueError:
+        errs.append("timeout: invalid")
+    if errs:
+        return ("msg-err", "; ".join(errs))
+    conf_set("radius", "enabled", "1" if form.get("r_en") else "0")
+    conf_set("radius", "server", srv)
+    conf_set("radius", "port", port)
+    conf_set("radius", "timeout", v("r_to") or "4")
+    conf_set("radius", "role", role)
+    if form.get("clr_r_secret"):
+        conf_set("radius", "secret", "")
+    elif v("r_secret"):
+        conf_set("radius", "secret", v("r_secret"))
+    log_event("NMC: RADIUS settings changed.")
+    return ("msg-ok", "RADIUS settings saved.")
+
+
+def do_services(form):
+    def v(k):
+        return form.get(k, [""])[0].strip()
+    svc = v("svc")
+    if svc == "modbus":
+        bind = v("mb_bind") or "0.0.0.0"
+        if not re.fullmatch(r"[0-9a-fA-F.:]{1,45}", bind):
+            return ("msg-err", "bind address: invalid")
+        port = v("mb_port") or "502"
+        if not re.fullmatch(r"\d{1,5}", port) \
+                or not 1 <= int(port) <= 65535:
+            return ("msg-err", "port: invalid")
+        unit = v("mb_unit") or "1"
+        if not re.fullmatch(r"\d{1,3}", unit) or not 1 <= int(unit) <= 247:
+            return ("msg-err", "unit id: 1-247")
+        conf_set("modbus", "bind", bind)
+        conf_set("modbus", "port", port)
+        conf_set("modbus", "unit", unit)
+        conf_set("modbus", "allow_write",
+                 "1" if form.get("mb_write") else "0")
+        ok, out = svc_apply("apc-nmc-modbus.service",
+                            bool(form.get("mb_en")))
+        log_event("NMC: Modbus TCP %s." %
+                  ("enabled" if form.get("mb_en") else "disabled"))
+        if not ok:
+            return ("msg-err", "Saved; service change failed: %s" % out)
+        return ("msg-ok", "Modbus TCP settings saved.")
+    if svc == "ftp":
+        ok, out = svc_apply("vsftpd.service", bool(form.get("ftp_en")))
+        log_event("NMC: FTP server %s." %
+                  ("enabled" if form.get("ftp_en") else "disabled"))
+        if not ok:
+            return ("msg-err",
+                    "Service change failed: %s "
+                    "(vsftpd installed?)" % out)
+        return ("msg-ok", "FTP server %s."
+                          % ("enabled" if form.get("ftp_en")
+                             else "disabled"))
+    return ("msg-err", "Unknown service.")
+
+
+def do_firewall(form):
+    def v(k):
+        return form.get(k, [""])[0].strip()
+    for k, key in (("fw_tcp", "allow_tcp"), ("fw_udp", "allow_udp")):
+        for p in v(k).split():
+            if not re.fullmatch(r"\d{1,5}", p) \
+                    or not 1 <= int(p) <= 65535:
+                return ("msg-err", "%s: '%s' is not a port" % (k, p))
+        conf_set("firewall", key, v(k)[:128])
+    for c in v("fw_from").split():
+        if not re.fullmatch(r"[0-9a-fA-F.:]+/\d{1,3}", c):
+            return ("msg-err", "allowed sources: '%s' is not a CIDR" % c)
+    conf_set("firewall", "allow_from", v("fw_from")[:256])
+    ok, out = svc_apply("apc-nmc-firewall.service",
+                        bool(form.get("fw_en")))
+    log_event("NMC: Firewall %s." %
+              ("enabled" if form.get("fw_en") else "disabled"))
+    if not ok:
+        return ("msg-err", "Saved; apply failed: %s" % out)
+    return ("msg-ok", "Firewall settings saved.")
+
+
+def do_dot1x(form):
+    def v(k):
+        return form.get(k, [""])[0].strip()
+    iface = v("x_if") or "eth0"
+    if not re.fullmatch(r"[a-z0-9]{1,15}", iface):
+        return ("msg-err", "interface: invalid name")
+    eap = v("x_eap").upper()
+    if eap not in ("PEAP", "TTLS", "TLS", "FAST"):
+        return ("msg-err", "EAP method: invalid")
+    for key in ("x_ca", "x_cc", "x_pk"):
+        val = v(key)
+        if val and not re.fullmatch(r"[A-Za-z0-9_/.\-]{1,128}", val):
+            return ("msg-err", "%s: invalid path" % key)
+    ph2 = v("x_ph2")
+    if ph2 and not re.fullmatch(r"[a-zA-Z0-9= _\-]{1,64}", ph2):
+        return ("msg-err", "phase2: invalid")
+    conf_set("dot1x", "iface", iface)
+    conf_set("dot1x", "eap", eap)
+    conf_set("dot1x", "identity", v("x_id")[:64])
+    conf_set("dot1x", "phase2", ph2)
+    conf_set("dot1x", "ca_cert", v("x_ca"))
+    conf_set("dot1x", "client_cert", v("x_cc"))
+    conf_set("dot1x", "private_key", v("x_pk"))
+    if form.get("clr_x_pass"):
+        conf_set("dot1x", "password", "")
+    elif v("x_pass"):
+        conf_set("dot1x", "password", v("x_pass"))
+    if form.get("clr_x_pkpass"):
+        conf_set("dot1x", "private_key_pass", "")
+    elif v("x_pkpass"):
+        conf_set("dot1x", "private_key_pass", v("x_pkpass"))
+    ok, out = svc_apply("apc-nmc-dot1x.service", bool(form.get("x_en")))
+    log_event("NMC: 802.1X %s." % ("enabled" if form.get("x_en")
+                                   else "disabled"))
+    if not ok:
+        return ("msg-err", "Saved; service change failed: %s "
+                           "(wpasupplicant installed?)" % out)
+    return ("msg-ok", "802.1X settings saved.")
+
+
 # ============================================================ http
 SEC_HEADERS = {
     "X-Frame-Options": "DENY",
@@ -3555,7 +4225,7 @@ SEC_HEADERS = {
 
 
 class H(BaseHTTPRequestHandler):
-    server_version = "APC-NMC/7.1.2"
+    server_version = "APC-NMC-Pi/" + installed_version()
     sys_version = ""
     protocol_version = "HTTP/1.1"
 
@@ -3758,6 +4428,11 @@ class H(BaseHTTPRequestHandler):
                 return self._send(401, "authentication required\n",
                                   "text/plain")
             return self._redir("/login?next=" + quote(p))
+        role = sess.get("role", "admin")
+        # config backup holds every credential — administrator only
+        if not role_get_ok(role, p) or \
+                (p == "/config/backup" and role != "admin"):
+            return self._page(403, pg_403(), {}, p)
         if p == "/datalog.json":
             return self._send(200, json.dumps(load_data()),
                               "application/json")
@@ -3824,6 +4499,9 @@ class H(BaseHTTPRequestHandler):
                 cmds = []
             return self._send(200, json.dumps(cmds), "application/json")
         d["__csrf"] = sess["csrf"]
+        d["__role"] = role
+        d["__uinfo"] = "%s &middot; %s" % (
+            sess.get("user") or WEB_USER, role)
         section = leaf = ""
         try:
             if p in ("/", "/home", "/home.htm", "/NMC.htm"):
@@ -3879,6 +4557,16 @@ class H(BaseHTTPRequestHandler):
                     msg = ("msg-err", q.get("why", ["Save failed"])[0])
                 b = pg_config(d, msg, self._token() or "")
                 section, leaf = "Configuration", "UPS"
+            elif p == "/config/system":
+                q = parse_qs(urlparse(self.path).query)
+                msg = ""
+                if q.get("r", [""])[0] == "ok":
+                    msg = ("msg-ok", q.get("why", [""])[0]
+                           or "Configuration saved.")
+                elif q.get("r", [""])[0] == "err":
+                    msg = ("msg-err", q.get("why", ["Save failed"])[0])
+                b = pg_system(d, msg)
+                section, leaf = "Configuration", "System"
             elif p == "/log/event":
                 b = pg_events(d)
                 section, leaf = "Logs", "Event Log"
@@ -3945,8 +4633,9 @@ class H(BaseHTTPRequestHandler):
             if locked:
                 return self._send(200, login_page(locked=locked))
             u = f.get("u", [""])[0][:64]
-            if _user_ok(u, f.get("p", [""])[0]):
-                tok = new_session(self._peer(), u)
+            role = user_auth(u, f.get("p", [""])[0])
+            if role:
+                tok = new_session(self._peer(), u, role)
                 log_event("NMC: User %s logged on from %s."
                           % (u, self._peer()))
                 return self._redir(nxt, {
@@ -3959,7 +4648,10 @@ class H(BaseHTTPRequestHandler):
         sess = self._sess()
         if not sess:
             return self._redir("/login")
+        role = sess.get("role", "admin")
         if p == "/config/restore":
+            if role != "admin":      # restore can rewrite users/config
+                return self._send(403, "administrator role required")
             q = parse_qs(urlparse(self.path).query)
             if not self._check_csrf({"_csrf": q.get("_csrf", [""])}):
                 return self._send(403, "Session token missing or expired - "
@@ -3985,12 +4677,19 @@ class H(BaseHTTPRequestHandler):
         if not self._check_csrf(f):
             return self._send(403, "Session token missing or expired - "
                                    "reload the page and try again.")
+        if not role_post_ok(role, p):
+            log_event("NMC: %s role denied POST %s from %s."
+                      % (role, p, self._peer()))
+            return self._page(403, pg_403(), {}, p)
         d = self._d()
         d["__csrf"] = sess["csrf"]
+        d["__role"] = role
+        d["__uinfo"] = "%s &middot; %s" % (
+            sess.get("user") or WEB_USER, role)
         if p == "/control/ups":
             act = f.get("act", [""])[0]
             if act not in ("reboot", "off", "sleep", "on", "bypass",
-                           "mute"):
+                           "mute", "beep_on", "beep_off"):
                 return self._redir("/control/ups")
             return self._send(200, page("APC UPS", pg_control_confirm(
                 d, act, f.get("skipdel", [""])[0], f.get("pcns", [""])[0]),
@@ -4081,6 +4780,22 @@ class H(BaseHTTPRequestHandler):
             if res[0] == "msg-ok":
                 return self._redir("/config/ups?r=ok")
             return self._redir("/config/ups?r=err&why=" + quote(res[1]))
+        for pp, fn in (("/config/users", do_users),
+                       ("/config/radius", do_radius),
+                       ("/config/services", do_services),
+                       ("/config/firewall", do_firewall),
+                       ("/config/dot1x", do_dot1x)):
+            if p == pp:
+                try:
+                    res = fn(f)
+                except Exception:
+                    traceback.print_exc()
+                    res = ("msg-err", "Save failed")
+                if res[0] == "msg-ok":
+                    return self._redir("/config/system?r=ok&why="
+                                       + quote(res[1]))
+                return self._redir("/config/system?r=err&why="
+                                   + quote(res[1]))
         if p == "/config/sessions":
             cur = self._token() or ""
             if f.get("act", [""])[0] == "others":
@@ -4164,7 +4879,7 @@ class H(BaseHTTPRequestHandler):
 
 
 class RedirectH(BaseHTTPRequestHandler):
-    server_version = "APC-NMC/7.1.2"
+    server_version = "APC-NMC-Pi/" + installed_version()
     sys_version = ""
     protocol_version = "HTTP/1.1"
 

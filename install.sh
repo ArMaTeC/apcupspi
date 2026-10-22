@@ -92,8 +92,11 @@ put() {  # put <repo-relative-path> [dest-mode]  — file or dir, parents create
 echo ">> Installing application files..."
 put usr/local/bin/apc-nmc-web.py   0755
 put usr/local/bin/apc-nmc-agent.py 0755
+put usr/local/bin/apc-nmc-modbus.py 0755
 put usr/local/bin/apc-nmc-web              # web UI assets (js/css)
 put usr/local/sbin/apc-nmc-update.sh    0755
+put usr/local/sbin/apc-nmc-firewall.sh  0755
+put usr/local/sbin/apc-nmc-dot1x.sh     0755
 put usr/local/sbin/firstboot-wizard.sh  0755
 put usr/local/sbin/net-watchdog.sh      0755
 put usr/local/sbin/nut-usb-detect.sh    0755
@@ -213,6 +216,10 @@ put etc/NetworkManager/conf.d/99-wifi-powersave-off.conf 0644
 put etc/avahi/avahi-daemon.conf 0644
 put etc/systemd/system/apc-nmc-web.service 0644
 put etc/systemd/system/apc-nmc-web.service.d 2>/dev/null || true
+put etc/systemd/system/apc-nmc-modbus.service 0644
+put etc/systemd/system/apc-nmc-modbus.service.d 2>/dev/null || true
+put etc/systemd/system/apc-nmc-firewall.service 0644
+put etc/systemd/system/apc-nmc-dot1x.service 0644
 put etc/systemd/system/net-watchdog.service 0644
 put etc/systemd/system/net-watchdog.timer 0644
 put etc/systemd/system/apc-nmc-update.service 0644
@@ -399,6 +406,27 @@ if confirm "Argon One case? Install fan/button daemon + i2c support."; then
     ln -sf /etc/argon/argonone-ir        /usr/bin/argonone-ir
     ln -sf /etc/argon/argon-uninstall.sh /usr/bin/argonone-uninstall
     systemctl enable argononed.service 2>/dev/null || true
+fi
+
+# optional FTP server (vsftpd) — a dedicated chrooted nmcftp account;
+# managed afterwards from Configuration > System
+if confirm "Install FTP server (vsftpd, chrooted nmcftp account)?"; then
+    apt-get install -y -qq vsftpd || true
+    if command -v vsftpd >/dev/null 2>&1; then
+        put etc/vsftpd.conf 0644
+        id nmcftp >/dev/null 2>&1 \
+            || useradd -r -d /var/lib/apc-nmc/ftp -s /usr/sbin/nologin nmcftp
+        install -d -o nmcftp -g nmcftp -m 0750 /var/lib/apc-nmc/ftp
+        echo nmcftp > /etc/vsftpd.userlist
+        if [ ! -s /etc/apc-nmc/ftp-password ]; then
+            head -c 12 /dev/urandom | base64 | tr -d '=+/' \
+                | head -c 12 > /etc/apc-nmc/ftp-password
+            chmod 600 /etc/apc-nmc/ftp-password
+        fi
+        echo "nmcftp:$(cat /etc/apc-nmc/ftp-password)" | chpasswd
+        systemctl enable --now vsftpd.service 2>/dev/null || true
+        echo ">> FTP installed: user nmcftp (password shown in the web UI)"
+    fi
 fi
 
 # ------------------------------------------------------------- enable stack

@@ -59,10 +59,13 @@ flowchart LR
 | 📡 **SNMP Agent** | Port `161` — APC PowerNet-MIB (`.1.3.6.1.4.1.318`) via `pass_persist`; v1/v2c communities + v3 read-only user; GET/GETNEXT/SET + traps |
 | 🔋 **NUT Backend** | `upsd` on `3493` + `upsmon` shutdown controller; `apc_modbus` **built from vendored NUT 2.8.5 source** on the target (prebuilt binary as fallback); auto-detects the UPS USB VID/PID at driver start |
 | 🛡️ **Resilience** | Kernel watchdog + `RuntimeWatchdogSec`, panic-reboot sysctl, per-service OOM tuning, `net-watchdog` connectivity recovery (per-interface gateway checks, Wi-Fi firmware wedge recovery) |
-| 🔔 **Alerts** | UPS events pushed to Discord, Teams, HTTP webhook, email (SMTP) or syslog — per-event routing matrix + severity filter + test buttons |
+| 🔔 **Alerts** | UPS events pushed to Discord, Teams, HTTP webhook, email (SMTP), syslog or **secure syslog (TLS)** — per-event routing matrix + severity filter + test buttons |
 | 🧙 **Setup Wizard** | Interactive first-boot wizard (hostname, credentials, network, UPS, SNMP, alerts, certs) — re-runnable anytime |
 | 🔄 **Safe Updates** | Update to the newest GitHub release from the UI — sha256/signature-verified payload, live streaming build console, per-file backups + one-click rollback, global banner when an update exists |
 | 📈 **Metrics** | Prometheus `/metrics` endpoint + JSON API + raw `events.txt`/`data.txt` like a real card; optional read-only bearer token for monitoring clients |
+| 🏭 **Modbus TCP** | BMS-facing server on `:502` — discrete inputs for status flags, input registers for live readings, optional write access for UPS commands ([register map](docs/modbus-registers.md)) |
+| 👥 **User Roles** | 4-tier access (admin / device / network / readonly) with per-page and per-action enforcement, plus **RADIUS** fallback auth for web logins |
+| 🛡️ **Network Security** | nftables firewall + wired **802.1X** (EAPoL) configured from the UI, optional chrooted **FTP server**, secure-boot status reporting |
 
 ## 📸 Screenshots
 
@@ -95,7 +98,7 @@ routing, sessions and backup/restore*
 | ![UPS Status](docs/img/ups-status.png) | ![Diagnostics](docs/img/diagnostics.png) |
 | *Status — battery, input, output, timers* | *Tests — self-test & runtime calibration* |
 | ![UPS Control](docs/img/ups-control.png) | ![Outlet Groups](docs/img/outlet-groups.png) |
-| *Control — safe shutdown / PCNS signaling* | *Outlet groups — per-group power control* |
+| *Control — safe shutdown, audible alarm on/off/mute, PCNS signaling* | *Outlet groups — per-group power control* |
 | ![Event Log](docs/img/event-log.png) | ![System](docs/img/about-system.png) |
 | *Event log — severity-filtered history* | *About — NMC identity & attached UPS* |
 | ![Network](docs/img/about-network.png) | ![Host](docs/img/about-host.png) |
@@ -153,6 +156,8 @@ Runs at the end of the install, and can be re-run any time via
 | `3493/tcp` | `nut-server` (`upsd`) | NUT daemon — loopback-only by default |
 | `161/udp` | `snmpd` | SNMP — PowerNet-MIB subtree |
 | `22/tcp` | `sshd` | Admin access |
+| `502/tcp` | `apc-nmc-modbus` | Modbus TCP (opt-in — enable in Configuration → System) |
+| `21/tcp` | `vsftpd` | FTP (opt-in at install, `nmcftp` chrooted account) |
 
 ## 🛠️ Install-time options
 
@@ -271,6 +276,18 @@ session needed, changes apply without a restart).
   updater refuse unsigned or tampered payloads entirely
 - The API bearer token is read-only — it can query `/metrics` and
   `/api/v1/*` but can't change anything or log in to the UI
+- **Roles**: `[users]` accounts in `nmc.conf` carry a role —
+  `admin` (full), `device` (UPS ops only), `network` (network config),
+  `readonly` (view only). Managed from *Configuration → System → User
+  Accounts*; `[radius]` adds PAP fallback auth against a RADIUS server.
+- **Firewall**: `[firewall]` drives an nftables input chain
+  (`apc-nmc-firewall.service`); SSH/HTTPS/SNMP/mDNS stay open by
+  default. **802.1X**: `[dot1x]` runs wpa_supplicant's wired driver.
+- **Modbus TCP** (`apc-nmc-modbus.service`, off by default) is
+  read-only unless `allow_write = 1` — which exposes real power
+  commands, so pair it with the firewall's `allow_from` restriction.
+- **FTP** (optional install) uses a chrooted `nmcftp` account confined
+  to `/var/lib/apc-nmc/ftp` — no system-user or anonymous access.
 
 ## 📁 Repo layout
 
@@ -279,8 +296,8 @@ The repo mirrors filesystem layout — files land exactly where they sit:
 ```text
 install.sh                  installer (payload = this repo)
 ├── docs/img/               README screenshots
-├── usr/local/bin/          apc-nmc-web.py · apc-nmc-agent.py · web UI assets
-├── usr/local/sbin/         apc-nmc-update.sh · firstboot-wizard.sh · watchdog/backup tools
+├── usr/local/bin/          apc-nmc-web.py · apc-nmc-agent.py · apc-nmc-modbus.py · web UI assets
+├── usr/local/sbin/         apc-nmc-update.sh · apc-nmc-firewall.sh · apc-nmc-dot1x.sh · firstboot-wizard.sh · watchdog/backup tools
 ├── usr/lib/nut/apc_modbus  fallback prebuilt NUT driver (aarch64)
 ├── usr/local/lib/          fallback libmodbus.so.5 (runtime dep of apc_modbus)
 ├── vendor/                 NUT 2.8.5 + NUT libmodbus fork sources (built on target)

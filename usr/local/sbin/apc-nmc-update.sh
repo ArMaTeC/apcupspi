@@ -274,7 +274,10 @@ EOF
     status running "deploying files"
     # Executables
     for f in usr/local/bin/apc-nmc-web.py usr/local/bin/apc-nmc-agent.py \
+             usr/local/bin/apc-nmc-modbus.py \
              usr/local/sbin/apc-nmc-update.sh \
+             usr/local/sbin/apc-nmc-firewall.sh \
+             usr/local/sbin/apc-nmc-dot1x.sh \
              usr/local/sbin/firstboot-wizard.sh \
              usr/local/sbin/net-watchdog.sh \
              usr/local/sbin/nut-usb-detect.sh \
@@ -297,6 +300,10 @@ EOF
         deploy "$f" "/$f" 0644 || say "WARN: failed to update $f"
     done
     deploy etc/nut/upsd.users.default /etc/nut/upsd.users.default 0640
+    # vsftpd.conf only lands where the admin opted into the FTP server
+    [ -f /etc/vsftpd.conf ] \
+        && deploy etc/vsftpd.conf /etc/vsftpd.conf 0644 \
+        || true
 
     # Driver + modbus library: rebuild from the vendored sources when
     # they and a toolchain are present — same result install.sh produces.
@@ -397,6 +404,12 @@ EOF
     case "$CHANGED" in
         */etc/nut/upsd.conf*) systemctl restart nut-server \
                               && say "  restarted nut-server" ;;
+    esac
+    # modbus daemon runs only when the admin enabled it — refresh it
+    # after a code update without auto-enabling it on fresh installs
+    case "$CHANGED" in
+        *apc-nmc-modbus*) systemctl try-restart apc-nmc-modbus \
+                          2>/dev/null || true ;;
     esac
     if [ "$DRIVER_CHG" = 1 ]; then
         systemctl restart 'nut-driver@*.service' 2>/dev/null \

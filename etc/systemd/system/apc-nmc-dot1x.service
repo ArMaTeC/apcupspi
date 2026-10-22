@@ -1,0 +1,15 @@
+[Unit]
+Description=APC NMC wired 802.1X supplicant (nmc.conf [dot1x])
+After=network-pre.target
+Before=network.target
+Wants=network-pre.target
+ConditionPathExists=/etc/apc-nmc/nmc.conf
+
+[Service]
+Type=simple
+ExecStart=/usr/local/sbin/apc-nmc-dot1x.sh run
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

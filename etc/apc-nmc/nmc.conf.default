@@ -41,9 +41,53 @@ min_sev = warn
 #   hook <flag> <on|off> "<status-string>"  (empty = disabled)
 hook =
 
-# Optional extra web logins: name = password (D4 multi-user)
+# Optional extra web logins: name = [role:]password-or-hash (D4 multi-user).
+# Roles: admin (full), device (UPS ops only), network (network config),
+# readonly (view only). A bare password is a legacy full-access admin.
 # [users]
-# readonly = examplepass
+# readonly = readonly:examplepass
+# tech = device:techpass
+
+[radius]
+# Fallback auth for web logins (PAP, UDP/1812): tried only when no
+# local account matches. RADIUS users get `role`.
+enabled = 0
+server =
+port = 1812
+secret =
+timeout = 4
+role = readonly
+
+[modbus]
+# Modbus TCP server (apc-nmc-modbus.service) — lets BMS clients poll the
+# UPS register map in docs/modbus-registers.md. Enable/disable the
+# service from Configuration > System; these keys tune it.
+bind = 0.0.0.0
+port = 502
+unit = 1
+# allow_write = 1 lets clients run UPS instant commands through the
+# command register/coils — off by default (read-only telemetry).
+allow_write = 0
+
+[dot1x]
+# Wired 802.1X (EAPoL) via wpa_supplicant - service toggled from the UI.
+iface = eth0
+eap = PEAP          # PEAP | TTLS | TLS | FAST
+identity =
+password =
+phase2 = auth=MSCHAPV2
+ca_cert =
+client_cert =
+private_key =
+private_key_pass =
+
+[firewall]
+# nftables input filter (apc-nmc-firewall.service) - toggled from the UI.
+# 22/80/443 + UDP 161/5353 are always allowed; extras below.
+allow_tcp =
+allow_udp =
+# space-separated CIDRs allowed to reach any service; empty = any
+allow_from =
 
 [web]
 # read-only bearer token for monitoring endpoints (Nagios, Prometheus

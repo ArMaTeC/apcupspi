@@ -11,7 +11,7 @@
     {
       "label": "Lint: py_compile",
       "type": "shell",
-      "command": "python3 -m py_compile usr/local/bin/apc-nmc-web.py usr/local/bin/apc-nmc-agent.py",
+      "command": "python3 -m py_compile usr/local/bin/apc-nmc-web.py usr/local/bin/apc-nmc-agent.py usr/local/bin/apc-nmc-modbus.py",
       "problemMatcher": []
     },
     {

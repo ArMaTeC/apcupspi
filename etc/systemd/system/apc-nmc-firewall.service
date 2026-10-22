@@ -1,0 +1,16 @@
+[Unit]
+Description=APC NMC nftables input firewall (from nmc.conf [firewall])
+After=network-pre.target
+Before=network.target
+Wants=network-pre.target
+ConditionPathExists=/etc/apc-nmc/nmc.conf
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/apc-nmc-firewall.sh apply
+ExecStop=/usr/local/sbin/apc-nmc-firewall.sh flush
+ExecReload=/usr/local/sbin/apc-nmc-firewall.sh apply
+
+[Install]
+WantedBy=multi-user.target
