@@ -2849,9 +2849,12 @@ any service. Status: <b>%s / %s</b></p>
     if dx_if not in wifaces:
         wifaces.append(dx_if)
     xo, xc = rof("/config/dot1x")
-    dxcard = """<div class="card"><h3>Wired 802.1X (EAPoL)</h3><div class="pad">%s
-<p class="mut" style="margin-top:0">Port authentication on the wired
-interface via wpa_supplicant. Status: <b>%s / %s</b></p>
+    dxcard = """<div class="card"><h3>Wired Port Authentication \
+(802.1X)</h3><div class="pad">%s
+<p class="mut" style="margin-top:0">Ethernet port authentication for
+managed switches that demand EAP credentials before allowing traffic
+(not related to WiFi — leave disabled on a normal LAN). Status:
+<b>%s / %s</b></p>
 <form method="post" action="/config/dot1x"><table class="kv">
 %s
 <tr><td class="lbl">Enabled</td><td><input type="checkbox" name="x_en"%s></td></tr>
