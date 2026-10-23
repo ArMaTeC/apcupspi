@@ -383,10 +383,10 @@ def test_do_wifi_hw_actions(tmp_path, monkeypatch):
     timers = []
 
     class _T:
-        def __init__(s, d, fn):
+        def __init__(self, d, fn):
             timers.append(fn)
 
-        def start(s):
+        def start(self):
             pass
 
     monkeypatch.setattr(web.threading, "Timer", _T)
