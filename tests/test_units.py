@@ -6,6 +6,7 @@ import json
 import os
 import struct
 import subprocess
+from typing import Any
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WEB = os.path.join(ROOT, "usr/local/bin/apc-nmc-web.py")
@@ -22,8 +23,10 @@ def _load(path, name):
     return m
 
 
-web = _load(WEB, "nmcweb")
-mod = _load(MOD, "nmcmodbus")
+# Loaded dynamically and monkey-patched by tests — Any silences
+# "attribute unknown" diagnostics on ModuleType assignments.
+web: Any = _load(WEB, "nmcweb")
+mod: Any = _load(MOD, "nmcmodbus")
 
 
 def _ver_newer(installed, latest):
