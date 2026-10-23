@@ -584,6 +584,7 @@ ROLE_GETS = {
     "device": ("/home", "/status/", "/control/", "/test/", "/log/",
                "/about/system", "/about/host", "/about/nut",
                "/about/update/progress",
+               "/config/ups",                     # its own config page
                "/events.txt", "/data.txt", "/datalog.json",
                "/status.json", "/api/v1/", "/metrics"),
     "network": ("/home", "/status/", "/config/", "/log/", "/about/",
@@ -593,10 +594,12 @@ ROLE_GETS = {
 }
 ROLE_POSTS = {
     "device": ("/control/", "/test/diag", "/status/battery",
-               "/config/ups", "/config/outlets"),
+               "/config/ups", "/config/outlets", "/config/security"),
     "network": ("/config/notify", "/config/services",
-                "/config/firewall", "/config/dot1x", "/config/wifi"),
-    "readonly": (),
+                "/config/firewall", "/config/dot1x", "/config/wifi",
+                "/config/security"),
+    # self-service password change only — everything else is read-only
+    "readonly": ("/config/security",),
 }
 
 
@@ -2060,16 +2063,23 @@ def _status_frags(d):
 def pg_status(d, msg: "str | tuple" = ""):
     fr = _status_frags(d)
     m = msgbox(msg)
+    batbtn = ""
+    if role_post_ok(d.get("__role", "admin"), "/status/battery"):
+        batbtn = ('<form method="post" action="/status/battery" '
+                  'style="margin-top:14px" onsubmit="return confirm('
+                  "'Mark the battery as replaced? The battery install "
+                  "date will be set to today and the on-battery "
+                  "statistics reset.')\">%s"
+                  '<button class="btn sec" type="submit">Battery '
+                  'Replaced</button></form>' % csrf_input(d))
     return """<h1 class="page">UPS Status</h1>%s
 <div class="card"><h3>%s</h3><div class="pad"><table class="kv"><tbody id="stTop">%s</tbody></table>
-<form method="post" action="/status/battery" style="margin-top:14px"
- onsubmit="return confirm('Mark the battery as replaced? The battery install date will be set to today and the on-battery statistics reset.')">
-%s<button class="btn sec" type="submit">Battery Replaced</button></form></div></div>
+%s</div></div>
 <div class="card"><h3>UPS Input</h3><div class="pad"><table class="kv"><tbody id="stInp">%s</tbody></table></div></div>
 <div class="card"><h3>UPS Output</h3><div class="pad"><table class="kv"><tbody id="stOut">%s</tbody></table></div></div>
 <div id="stTimers">%s</div><div id="stEnv">%s</div>
 <script>%s</script>""" % (m, esc(d.get("ups.model", "UPS")), fr["stTop"],
-                csrf_input(d), fr["stInp"], fr["stOut"], fr["stTimers"],
+                batbtn, fr["stInp"], fr["stOut"], fr["stTimers"],
                 fr["stEnv"], _asset("status.js"))
 
 
@@ -2101,6 +2111,12 @@ def pg_control(d, msg: "str | tuple" = "", cmds=None):
     sdel = num(d, "ups.delay.shutdown", 0) or 0
     delnote = ('<p class="note" style="margin-top:6px">Configured shutdown '
                'delay: %d s.</p>' % int(sdel)) if sdel else ""
+    if not role_post_ok(d.get("__role", "admin"), "/control/ups"):
+        return """<h1 class="page">UPS Control</h1>%s
+<div class="card"><h3>Control the UPS</h3><div class="pad">
+<p class="note">Read-only access &mdash; UPS control actions are not
+available for your user role.</p>
+</div></div>""" % m
     return """<h1 class="page">UPS Control</h1>%s
 <div class="card"><h3>Control the UPS</h3><div class="pad">
 <form method="post" action="/control/ups">
@@ -2180,6 +2196,7 @@ def outlet_groups(d):
 def pg_outlets(d, msg: "str | tuple" = ""):
     m = msgbox(msg)
     groups = outlet_groups(d)
+    can_control = role_post_ok(d.get("__role", "admin"), "/control/outlets")
     rows = ""
     for g in groups:
         on = g["status"] == "on"
@@ -2196,12 +2213,8 @@ def pg_outlets(d, msg: "str | tuple" = ""):
         if g["timer_reboot"] and g["timer_reboot"] != "NotActive":
             timers.append("reboot: " + g["timer_reboot"])
         sub = "; ".join(delays + timers)
-        rows += ("""<tr data-gidx="%s">
-<td>%s</td><td>%s</td>
-<td><span class="dot %s"></span><span class="gstat">%s</span>
-<div class="note" style="font-size:12px">%s</div></td>
-<td style="text-align:right;white-space:nowrap">
-<form method="post" action="/control/outlets" style="display:inline;margin-right:10px">
+        if can_control:
+            ctrl = ("""<form method="post" action="/control/outlets" style="display:inline;margin-right:10px">
 %s
 <input type="hidden" name="gid" value="%s">
 <input type="hidden" name="act" value="cycle">
@@ -2212,12 +2225,19 @@ def pg_outlets(d, msg: "str | tuple" = ""):
 <input type="hidden" name="act" class="swact" value="%s">
 <label class="sw"><input type="checkbox" class="swin" onchange="this.form.submit()"%s>
 <span class="tr"></span></label><span class="swtxt gsw">%s</span>
-</form></td></tr>""" % (
+</form>""" % (
+                csrf_input(d), esc(g["idx"]), csrf_input(d), esc(g["idx"]),
+                "off" if on else "on", " checked" if on else "",
+                "On" if on else "Off"))
+        else:
+            ctrl = '<span class="note">read-only</span>'
+        rows += ("""<tr data-gidx="%s">
+<td>%s</td><td>%s</td>
+<td><span class="dot %s"></span><span class="gstat">%s</span>
+<div class="note" style="font-size:12px">%s</div></td>
+<td style="text-align:right;white-space:nowrap">%s</td></tr>""" % (
             esc(g["idx"]), esc(g["id"]), esc(g["name"]),
-            "on" if on else "off", esc(g["status"]), esc(sub),
-            csrf_input(d), esc(g["idx"]), csrf_input(d), esc(g["idx"]),
-            "off" if on else "on", " checked" if on else "",
-            "On" if on else "Off"))
+            "on" if on else "off", esc(g["status"]), esc(sub), ctrl))
     if not rows:
         rows = ('<tr><td colspan="4" class="note">No outlet groups '
                 'reported by the UPS.</td></tr>')
@@ -2233,7 +2253,7 @@ def pg_outlets(d, msg: "str | tuple" = ""):
                         esc(g["idx"]), esc(g["delay_reboot"] or ""),
                         esc(g["idx"]), esc(g["delay_start"] or "")))
     cfgcard = ""
-    if cfg_rows:
+    if cfg_rows and can_control:
         cfgcard = ("""<div class="card"><h3>Outlet Group Configuration</h3>
 <div class="pad">
 <form method="post" action="/config/outlets">%s
@@ -2307,42 +2327,56 @@ def pg_tests(d, msg: "str | tuple" = ""):
                    '. The UPS will silently ignore the start command '
                    'until these conditions are met &mdash; attach a '
                    'steady load and let the battery reach 100%%.</div>')
+    if role_post_ok(d.get("__role", "admin"), "/test/diag"):
+        selfform = ('<form method="post" action="/test/diag" '
+                    'style="margin-top:14px">%s'
+                    '<input type="hidden" name="test" value="self">'
+                    '<button class="btn"%s>%s</button></form>' % (
+                        csrf_input(d), " disabled" if testing else "",
+                        "Self Test In Progress..." if testing
+                        else "Initiate UPS Self Test"))
+        calforms = ('<form method="post" action="/test/diag" '
+                    'style="margin-top:14px;display:inline">%s'
+                    '<input type="hidden" name="test" value="calstart">'
+                    '<button class="btn"%s>Start Runtime Calibration'
+                    '</button></form>'
+                    '<form method="post" action="/test/diag" '
+                    'style="display:inline">%s'
+                    '<input type="hidden" name="test" value="calstop">'
+                    '<button class="btn sec"%s>Stop Runtime Calibration'
+                    '</button></form>' % (
+                        csrf_input(d), " disabled" if cal else "",
+                        csrf_input(d), "" if cal else " disabled"))
+    else:
+        selfform = ('<p class="note" style="margin-top:10px">Read-only '
+                    'access &mdash; test actions require the device '
+                    'role.</p>')
+        calforms = ""
     return """<h1 class="page">Diagnostics</h1>
 <div id="pagebody">%s
 <div class="card"><h3>UPS Self Test</h3><div class="pad"><table class="kv">
 %s%s%s</table>
-<form method="post" action="/test/diag" style="margin-top:14px">
-%s
-<input type="hidden" name="test" value="self">
-<button class="btn"%s>%s</button></form></div></div>
+%s</div></div>
 <div class="card"><h3>Runtime Calibration</h3><div class="pad"><table class="kv">
 %s%s</table>%s
-<form method="post" action="/test/diag" style="margin-top:14px;display:inline">
-%s
-<input type="hidden" name="test" value="calstart">
-<button class="btn"%s>Start Runtime Calibration</button></form>
-<form method="post" action="/test/diag" style="display:inline">
-%s
-<input type="hidden" name="test" value="calstop">
-<button class="btn sec"%s>Stop Runtime Calibration</button></form></div></div>
+%s</div></div>
 </div>
 <script>var NMC_INIT={status:%s};</script><script>%s</script>""" % (
         m,
         kv("Last Test Result", esc(test_result_str(result))),
         kv("Last Test Date", esc(testdate)),
         kv("Diagnostic Schedule", esc(diag_schedule_str())),
-        csrf_input(d), " disabled" if testing else "",
-        "Self Test In Progress..." if testing else "Initiate UPS Self Test",
+        selfform,
         kv("Last Calibration Date", st.get("cal_date", "UNKNOWN")),
         kv("Calibration Status", "Running" if cal else "Not running"),
         req,
-        csrf_input(d), " disabled" if cal else "",
-        csrf_input(d), "" if cal else " disabled",
+        calforms,
         json.dumps(d.get("ups.status", "")), _asset("tests.js"))
 
 
-def _sessions_rows(d, cur_tok):
-    """Active-session table for the config page (N5)."""
+def _sessions_rows(d, cur_tok, can_drop=True):
+    """Active-session table for the config page (N5). Log-off buttons
+    render only for roles allowed to POST /config/sessions (admin)."""
     now = time.time()
     with _sessions_lock:
         items = sorted(sessions.items(),
@@ -2360,6 +2394,8 @@ def _sessions_rows(d, cur_tok):
             ip = esc(s["user"]) + "@" + ip
         if t == cur_tok:
             ip += " <b>(this session)</b>"
+            btn = ""
+        elif not can_drop:
             btn = ""
         else:
             btn = ('<form method="post" action="/config/sessions" '
@@ -2498,6 +2534,33 @@ changes first.</p></div></div>""" % (
         _secf("SMTP Password", "nsmtppass", "smtp_pass", "password"),
         esc(nc["smtp_from"]), esc(nc["smtp_to"]),
         rt_head, rt_rows, tbtns)
+    # Role-aware cards: hide actions the session's role can't POST so
+    # the page shows controls that actually work (device gets the UPS
+    # form, network gets notifications, everyone gets password change).
+    role = d.get("__role", "admin")
+    if not role_post_ok(role, "/config/notify"):
+        ncard = ""
+    upsbtns = ('<div style="margin-top:16px"><button class="btn">Apply'
+               '</button> <a class="btn sec" href="/config/ups">Cancel'
+               '</a></div>'
+               if role_post_ok(role, "/config/ups") else "")
+    othersform = bkcard = ""
+    if role == "admin":
+        othersform = ('<form method="post" action="/config/sessions" '
+                      'style="margin-top:12px">%s'
+                      '<input type="hidden" name="act" value="others">'
+                      '<button class="btn sec">Log off all other '
+                      'sessions</button></form>' % csrf_input(d))
+        bkcard = """<div class="card"><h3>Backup / Restore</h3><div class="pad">
+<p class="mut" style="margin-top:0">Download a backup of the card
+configuration and state, or restore one. Restoring replaces
+nmc.conf and card state, then restarts this interface.</p>
+<a class="btn sec" href="/config/backup">Download backup</a>
+<input type="file" id="bkfile" accept=".tgz,.tar.gz"
+ style="margin-left:12px;font-size:13px">
+<button class="btn" onclick="bkRestore()" style="margin-left:8px">Restore</button>
+<div id="bkmsg" class="mut" style="margin-top:8px"></div>
+</div></div>"""
     return """<h1 class="page">UPS Configuration</h1>%s
 <div class="card"><h3>General</h3><div class="pad">
 <form method="post" action="/config/ups"><table class="kv">
@@ -2520,11 +2583,10 @@ changes first.</p></div></div>""" % (
 <tr><td class="lbl">Transfer Voltage Low (VAC)</td><td><input name="trlow" type="number" min="150" max="300" value="%s"></td></tr>
 <tr><td class="lbl">Transfer Voltage High (VAC)</td><td><input name="trhigh" type="number" min="150" max="300" value="%s"></td></tr>
 </table>
-<div style="margin-top:16px"><button class="btn">Apply</button>
-<a class="btn sec" href="/config/ups">Cancel</a></div>
+%s
 </form></div></div>
 %s
-<div class="card"><h3>Change Web Password</h3><div class="pad">
+<div class="card"><h3>Change Password</h3><div class="pad">
 <form method="post" action="/config/security"><table class="kv">
 %s
 <tr><td class="lbl">Current Password</td><td><input name="curp" type="password" autocomplete="current-password"></td></tr>
@@ -2539,20 +2601,9 @@ changes first.</p></div></div>""" % (
 <th></th></tr>
 %s
 </table>
-<form method="post" action="/config/sessions" style="margin-top:12px">%s
-<input type="hidden" name="act" value="others">
-<button class="btn sec">Log off all other sessions</button></form>
+%s
 </div></div>
-<div class="card"><h3>Backup / Restore</h3><div class="pad">
-<p class="mut" style="margin-top:0">Download a backup of the card
-configuration and state, or restore one. Restoring replaces
-nmc.conf and card state, then restarts this interface.</p>
-<a class="btn sec" href="/config/backup">Download backup</a>
-<input type="file" id="bkfile" accept=".tgz,.tar.gz"
- style="margin-left:12px;font-size:13px">
-<button class="btn" onclick="bkRestore()" style="margin-left:8px">Restore</button>
-<div id="bkmsg" class="mut" style="margin-top:8px"></div>
-</div></div>
+%s
 <script>var NMC_INIT={csrf:%s};</script><script>%s</script>
 <p class="note">Values the UPS can store are written to it via NUT SET VAR;
 the rest are kept on the management card.</p>""" % (
@@ -2567,10 +2618,12 @@ the rest are kept on the management card.</p>""" % (
         g("min_return_capacity", num(d, "battery.charge.low", 10) or 10),
         esc(d.get("input.transfer.low", "")),
         esc(d.get("input.transfer.high", "")),
+        upsbtns,
         ncard,
         csrf_input(d),
-        _sessions_rows(d, cur_tok),
-        csrf_input(d),
+        _sessions_rows(d, cur_tok, role == "admin"),
+        othersform,
+        bkcard,
         json.dumps(d.get("__csrf", "")), _asset("config.js"))
 
 
@@ -2585,6 +2638,15 @@ def pg_system(d, msg: "str | tuple" = ""):
         return ("" if admin else
                 '<p class="note">Only administrator accounts can change '
                 'this section.</p>')
+
+    def rof(path):
+        """(open, close) of a disabled fieldset for cards whose POST
+        target the session role can't reach — the whole card renders
+        but every input/button inside is visibly disabled."""
+        if role_post_ok(d.get("__role", "admin"), path):
+            return "", ""
+        return (('<fieldset disabled style="border:0;margin:0;'
+                 'padding:0;min-width:0">'), '</fieldset>')
 
     def sel(name, cur, opts):
         o = "".join('<option value="%s"%s>%s</option>'
@@ -2675,7 +2737,8 @@ Status: <b>%s</b></p>%s</div></div>""" % (
             ftppw = f.read().strip()
     except OSError:
         pass
-    scard = """<div class="card"><h3>Network Services</h3><div class="pad">
+    so, sc = rof("/config/services")
+    scard = """<div class="card"><h3>Network Services</h3><div class="pad">%s
 <h4 style="margin:0 0 8px">Modbus TCP (BMS integration)</h4>
 <p class="mut" style="margin-top:0">Serves the documented UPS register
 map (docs/modbus-registers.md) &mdash; status bits as discrete inputs,
@@ -2697,7 +2760,8 @@ Status: <b>%s / %s</b>%s</p>
 %s<input type="hidden" name="svc" value="ftp"><table class="kv">
 <tr><td class="lbl">Enabled</td><td><input type="checkbox" name="ftp_en"%s></td></tr>
 </table><div style="margin-top:12px"><button class="btn">Apply</button></div>
-</form></div></div>""" % (
+</form>%s</div></div>""" % (
+        so,
         "enabled" if mb_en else "disabled",
         "active" if mb_act else "stopped",
         csrf, " checked" if mb_en else "",
@@ -2710,11 +2774,12 @@ Status: <b>%s / %s</b>%s</p>
         "active" if ftp_act else "stopped",
         ("<br>Login: <code>nmcftp</code> &mdash; password <code>%s</code>"
          % esc(ftppw)) if ftppw and admin else "",
-        csrf, " checked" if ftp_en else "")
+        csrf, " checked" if ftp_en else "", sc)
 
     # ---- firewall -------------------------------------------------------
     fw_en, fw_act = svc_state("apc-nmc-firewall.service")
-    fwcard = """<div class="card"><h3>Firewall</h3><div class="pad">
+    fo, fc = rof("/config/firewall")
+    fwcard = """<div class="card"><h3>Firewall</h3><div class="pad">%s
 <p class="mut" style="margin-top:0">nftables input filter. SSH (22),
 HTTP/S (80/443), SNMP (161) and mDNS (5353) are always allowed; list
 extra ports to open and, optionally, the only CIDRs allowed to reach
@@ -2726,13 +2791,14 @@ any service. Status: <b>%s / %s</b></p>
 <tr><td class="lbl">Extra UDP Ports</td><td><input name="fw_udp" maxlength="128" value="%s" placeholder=""></td></tr>
 <tr><td class="lbl">Allowed Sources</td><td><input name="fw_from" maxlength="256" value="%s" placeholder="192.168.1.0/24 10.0.0.5/32 (empty = any)"></td></tr>
 </table><div style="margin-top:12px"><button class="btn">Apply</button></div>
-</form></div></div>""" % (
+</form>%s</div></div>""" % (
+        fo,
         "enabled" if fw_en else "disabled",
         "active" if fw_act else "stopped",
         csrf, " checked" if fw_en else "",
         esc(cfg("firewall", "allow_tcp", "")),
         esc(cfg("firewall", "allow_udp", "")),
-        esc(cfg("firewall", "allow_from", "")))
+        esc(cfg("firewall", "allow_from", "")), fc)
 
     # ---- 802.1X ---------------------------------------------------------
     dx_en, dx_act = svc_state("apc-nmc-dot1x.service")
@@ -2740,7 +2806,8 @@ any service. Status: <b>%s / %s</b></p>
     wifaces = net_ifaces(("e",))
     if dx_if not in wifaces:
         wifaces.append(dx_if)
-    dxcard = """<div class="card"><h3>Wired 802.1X (EAPoL)</h3><div class="pad">
+    xo, xc = rof("/config/dot1x")
+    dxcard = """<div class="card"><h3>Wired 802.1X (EAPoL)</h3><div class="pad">%s
 <p class="mut" style="margin-top:0">Port authentication on the wired
 interface via wpa_supplicant. Status: <b>%s / %s</b></p>
 <form method="post" action="/config/dot1x"><table class="kv">
@@ -2756,7 +2823,8 @@ interface via wpa_supplicant. Status: <b>%s / %s</b></p>
 <tr><td class="lbl">Private Key (TLS)</td><td><input name="x_pk" maxlength="128" value="%s"></td></tr>
 <tr><td class="lbl">Key Password</td><td>%s</td></tr>
 </table><div style="margin-top:12px"><button class="btn">Apply</button></div>
-</form></div></div>""" % (
+</form>%s</div></div>""" % (
+        xo,
         "enabled" if dx_en else "disabled",
         "active" if dx_act else "stopped",
         csrf, " checked" if dx_en else "",
@@ -2770,7 +2838,7 @@ interface via wpa_supplicant. Status: <b>%s / %s</b></p>
         esc(cfg("dot1x", "client_cert", "")),
         esc(cfg("dot1x", "private_key", "")),
         secf("x_pkpass", cfg("dot1x", "private_key_pass", ""),
-             "key password"))
+             "key password"), xc)
 
     # ---- wifi setup ----------------------------------------------------
     wlifaces = net_ifaces(("wl",))
@@ -2783,7 +2851,8 @@ setup is unavailable.</p></div></div>"""
         wcard = """<div class="card"><h3>WiFi Setup</h3><div class="pad">
 <p class="note">No wireless interface detected.</p></div></div>"""
     else:
-        wcard = """<div class="card"><h3>WiFi Setup</h3><div class="pad">
+        wo, wc = rof("/config/wifi")
+        wcard = """<div class="card"><h3>WiFi Setup</h3><div class="pad">%s
 <p class="mut" style="margin-top:0">Onboard wireless (Pi 3/4/5) via
 NetworkManager. Radio: <b>%s</b>%s</p>
 <div style="margin-bottom:14px;display:flex;gap:10px;flex-wrap:wrap">
@@ -2815,7 +2884,8 @@ fetch('/config/wifi/scan?if='+encodeURIComponent(
  msg.textContent=ns.length?ns.length+' network(s)':'none found';
  document.getElementById('wssid').focus()})
 .catch(function(){msg.textContent='scan failed'})}})();
-</script></div></div>""" % (
+</script>%s</div></div>""" % (
+            wo,
             esc(wradio),
             (" &mdash; connected to <b>%s</b>" % esc(wconn)) if wconn else "",
             csrf,
@@ -2831,7 +2901,8 @@ fetch('/config/wifi/scan?if='+encodeURIComponent(
             ('<select name="w_if" id="w_if">%s</select>' % "".join(
                 '<option value="%s"%s>%s</option>'
                 % (i, " selected" if i == wlifaces[0] else "", esc(i))
-                for i in wlifaces)))
+                for i in wlifaces)),
+            wc)
 
     sb = secure_boot_status()
     sbcard = """<div class="card"><h3>Secure Boot</h3><div class="pad">
@@ -2857,6 +2928,13 @@ def pg_events(d, msg=""):
             esc(e["text"]))
         for e in reversed(evs)) or \
         '<tr><td colspan="4" class="note">No events.</td></tr>'
+    clearform = ""
+    if role_post_ok(d.get("__role", "admin"), "/log/clear"):
+        clearform = ('<form method="post" action="/log/clear" '
+                     'style="display:inline" onsubmit="return confirm('
+                     "'Clear the entire event log?')\">%s"
+                     '<button class="btn sec">Clear Log</button></form>'
+                     % csrf_input(d))
     return """<h1 class="page">Event Log</h1>%s
 <div class="card"><div class="pad">
 <div style="display:flex;gap:18px;flex-wrap:wrap;align-items:center;
@@ -2872,10 +2950,8 @@ def pg_events(d, msg=""):
 <th>Event</th></tr>%s</table>
 <div style="margin-top:14px;display:flex;gap:10px">
 <a class="btn sec" href="/events.txt">Download events.txt</a>
-<form method="post" action="/log/clear" style="display:inline"
- onsubmit="return confirm('Clear the entire event log?')">
-%s<button class="btn sec">Clear Log</button></form></div>
-</div></div>""" % (m, rows, csrf_input(d))
+%s</div>
+</div></div>""" % (m, rows, clearform)
 
 
 def pg_data():
@@ -3054,27 +3130,31 @@ def pg_about(d, msg: "str | tuple" = ""):
         return "".join('<option value="%s"%s>%s</option>'
                        % (o, " selected" if o == cur else "", esc(o))
                        for o in opts)
-    utok = cfg("web", "api_token", "")
-    tokdisp = ('<code style="word-break:break-all">%s</code>' % esc(utok)
-               if utok else '<span style="color:var(--mut)">not set</span>')
-    tokclear = ("""<form method="post" action="/about/update/token"
- style="display:inline"
- onsubmit="return confirm('Clear the API token? Clients using it lose access.')">"""
-                + csrf_input(d)
-                + '<input type="hidden" name="act" value="clear">'
-                  '<button class="btn sec" type="submit">Clear</button></form>'
-                if utok else "")
-    return """<h1 class="page">About</h1>%s
-<div class="card"><h3>Software Update</h3><div class="pad">
-<table class="kv">%s</table>
-<form method="post" action="/about/update/check" style="display:inline"
+    # Update controls and the Update Settings card (which displays the
+    # API token in full — readable bearer credentials) are admin-only;
+    # other roles keep the read-only version/status table.
+    is_admin = d.get("__role", "admin") == "admin"
+    updbtns = updcfg = ""
+    if is_admin:
+        updbtns = ("""<form method="post" action="/about/update/check" style="display:inline"
  onsubmit="var b=this.querySelector('button');b.disabled=true;b.textContent='Checking&#8230;';">%s
 <button class="btn sec updbtn" type="submit"%s>Check for Updates</button></form>
 <form method="post" action="/about/update/apply" style="display:inline"
  onsubmit="return confirm('Download and install the latest version now? Services (including this interface) restart during the update.')">
 %s<button class="btn sec updbtn" type="submit"%s>Update Now</button></form>
-%s</div></div>
-<div class="card"><h3>Update Settings</h3><div class="pad">
+%s""" % (csrf_input(d), dis, csrf_input(d), dis, rollbtn))
+        utok = cfg("web", "api_token", "")
+        tokdisp = ('<code style="word-break:break-all">%s</code>'
+                   % esc(utok) if utok else
+                   '<span style="color:var(--mut)">not set</span>')
+        tokclear = ("""<form method="post" action="/about/update/token"
+ style="display:inline"
+ onsubmit="return confirm('Clear the API token? Clients using it lose access.')">"""
+                    + csrf_input(d)
+                    + '<input type="hidden" name="act" value="clear">'
+                      '<button class="btn sec" type="submit">Clear</button></form>'
+                    if utok else "")
+        updcfg = """<div class="card"><h3>Update Settings</h3><div class="pad">
 <form method="post" action="/about/update/settings"><table class="kv">
 <tr><td class="lbl">Repository</td><td><input name="urepo" maxlength="64"
  value="%s" placeholder="owner/name"></td></tr>
@@ -3097,25 +3177,30 @@ def pg_about(d, msg: "str | tuple" = ""):
  onsubmit="return confirm('%s')">%s
 <input type="hidden" name="act" value="generate">
 <button class="btn sec" type="submit">%s</button></form>
-%s</div></div></div>
+%s</div></div></div>""" % (
+            esc(cfg("update", "repo", "ArMaTeC/apcupspi")),
+            esc(cfg("update", "branch", "main")),
+            sel(cfg("update", "channel", "releases"), "releases", "branch"),
+            sel(cfg("update", "verify", "checksum"),
+                "checksum", "strict", "0"),
+            " checked" if cfg("update", "autocheck", "1") != "0" else "",
+            csrf_input(d), dis,
+            tokdisp,
+            ("Replace the existing API token? Clients using it lose "
+             "access." if utok else "Generate a new API token?"),
+            csrf_input(d),
+            "Regenerate" if utok else "Generate",
+            tokclear)
+    return """<h1 class="page">About</h1>%s
+<div class="card"><h3>Software Update</h3><div class="pad">
+<table class="kv">%s</table>
+%s</div></div>
+%s
 <div class="card"><h3>Network Management Card</h3><div class="pad">
 <table class="kv">%s</table></div></div>
 <div class="card"><h3>Attached UPS</h3><div class="pad">
 <table class="kv">%s</table></div></div>""" % (
-        m, upd, csrf_input(d), dis, csrf_input(d), dis, rollbtn,
-        esc(cfg("update", "repo", "ArMaTeC/apcupspi")),
-        esc(cfg("update", "branch", "main")),
-        sel(cfg("update", "channel", "releases"), "releases", "branch"),
-        sel(cfg("update", "verify", "checksum"), "checksum", "strict", "0"),
-        " checked" if cfg("update", "autocheck", "1") != "0" else "",
-        csrf_input(d), dis,
-        tokdisp,
-        ("Replace the existing API token? Clients using it lose access."
-         if utok else "Generate a new API token?"),
-        csrf_input(d),
-        "Regenerate" if utok else "Generate",
-        tokclear,
-        rows, dev)
+        m, upd, updbtns, updcfg, rows, dev)
 
 
 def pg_update_apply():
@@ -3580,7 +3665,7 @@ def do_outlet(gid, act):
     return r
 
 
-def do_restore(blob):
+def do_restore(blob, user=None):
     """Validate and apply a backup archive produced by /config/backup."""
     data = {}
     try:
@@ -3633,7 +3718,7 @@ def do_restore(blob):
     if "events.json" in data:
         _atomic_json(EVENTS_FILE, lambda o: json.loads(data["events.json"]))
     log_event("NMC: Card configuration restored from backup by %s."
-              % WEB_USER, "warn")
+              % (user or WEB_USER), "warn")
     return ("msg-ok", "Configuration restored; restarting the interface.")
 
 
@@ -3760,7 +3845,7 @@ def _load_json(path):
         return {}
 
 
-def do_update_settings(form):
+def do_update_settings(form, user=None):
     """Persist the [update] options from the Update Settings card into
     nmc.conf — the updater reads them from the file directly."""
     def v(k):
@@ -3783,21 +3868,21 @@ def do_update_settings(form):
                      ("autocheck",
                       "1" if form.get("uautocheck") else "0")):
         conf_set("update", key, val)
-    log_event("NMC: Update settings changed by %s." % WEB_USER)
+    log_event("NMC: Update settings changed by %s." % (user or WEB_USER))
     return ("msg-ok", "Update settings saved.")
 
 
-def do_update_token(form):
+def do_update_token(form, user=None):
     """Generate/clear the [web] api_token used by monitoring clients."""
     act = form.get("act", [""])[0]
     if act == "generate":
         tok = secrets.token_urlsafe(24)
         conf_set("web", "api_token", tok)
-        log_event("NMC: API token generated by %s." % WEB_USER)
+        log_event("NMC: API token generated by %s." % (user or WEB_USER))
         return ("msg-ok", "API token generated.")
     if act == "clear":
         conf_set("web", "api_token", "")
-        log_event("NMC: API token cleared by %s." % WEB_USER)
+        log_event("NMC: API token cleared by %s." % (user or WEB_USER))
         return ("msg-ok", "API token cleared.")
     return ("msg-err", "Unknown action.")
 
@@ -4119,23 +4204,51 @@ def do_config(form):
     return ("msg-ok", "Configuration saved.")
 
 
-def do_password_change(form):
+def do_password_change(form, user=None):
+    """Self-service password change for the *logged-in* user — validates
+    the current password against that user's own credential, then writes
+    web_pass_hash for the primary apc account or the user's [users]
+    entry (role preserved) for extra accounts. RADIUS-only users get an
+    error; their password lives on the authentication server."""
     cur = form.get("curp", [""])[0]
     new = form.get("newp", [""])[0]
     cnf = form.get("cfmp", [""])[0]
-    if not web_password_ok(cur):
+    user = user or WEB_USER
+    # A name with no local credential at all is a RADIUS-only account —
+    # its password lives on the authentication server.
+    if user != WEB_USER and not (
+            _cp.has_section("users")
+            and user in set(_cp.options("users")) - set(_cp.defaults())):
+        return ("msg-err", ("This account is managed by the "
+                            "authentication server, not this card."))
+    # user_auth checks the session user's own credential: web_pass for
+    # apc, the [users] entry for extra accounts
+    if not user_auth(user, cur):
         return ("msg-err", "Current password is incorrect.")
     if len(new) < 6:
         return ("msg-err", "New password must be at least 6 characters.")
     if new != cnf:
         return ("msg-err", "New passwords do not match.")
     salt = secrets.token_hex(16)
-    cfg_set("web_pass_hash",
-            salt + "$" + hashlib.pbkdf2_hmac(
-                _PBKDF[0], new.encode(), bytes.fromhex(salt),
-                _PBKDF[1]).hex())
-    cfg_set("web_pass", "")
-    log_event("NMC: Web interface password changed.")
+    hashed = salt + "$" + hashlib.pbkdf2_hmac(
+        _PBKDF[0], new.encode(), bytes.fromhex(salt),
+        _PBKDF[1]).hex()
+    if user == WEB_USER:
+        cfg_set("web_pass_hash", hashed)
+        cfg_set("web_pass", "")
+        log_event("NMC: Web interface password changed.")
+    else:
+        if _cp.has_section("users"):
+            for name in set(_cp.options("users")) - set(_cp.defaults()):
+                if not secrets.compare_digest(user, name):
+                    continue
+                role, _ = _parse_user_cred(_cp.get("users", name))
+                conf_set("users", name, "%s:%s" % (role, hashed))
+                log_event("NMC: Password changed for user %s." % user)
+                return ("msg-ok",
+                        "Password changed. Use it at next log on.")
+        return ("msg-err", ("This account is managed by the "
+                            "authentication server, not this card."))
     return ("msg-ok", "Password changed. Use it at next log on.")
 
 
@@ -4956,7 +5069,8 @@ class H(BaseHTTPRequestHandler):
             if not 0 < n <= 4 * 1024 * 1024:
                 return self._send(400, "bad upload")
             try:
-                res = do_restore(self.rfile.read(n))
+                res = do_restore(self.rfile.read(n),
+                                 sess.get("user"))
             except Exception:
                 traceback.print_exc()
                 res = ("msg-err", "Restore failed.")
@@ -5069,7 +5183,7 @@ class H(BaseHTTPRequestHandler):
                                    + quote(res[1]))
             return self._redir("/config/ups?r=err&why=" + quote(res[1]))
         if p == "/config/security":
-            res = do_password_change(f)
+            res = do_password_change(f, sess.get("user"))
             if res[0] == "msg-ok":
                 return self._redir("/config/ups?r=ok")
             return self._redir("/config/ups?r=err&why=" + quote(res[1]))
@@ -5098,16 +5212,18 @@ class H(BaseHTTPRequestHandler):
                         sessions.pop(t, None)
                     _persist_sessions()
                 log_event("NMC: All other sessions logged off by %s."
-                          % WEB_USER)
+                          % (sess.get("user") or WEB_USER))
                 return self._redir("/config/ups?r=ok")
             drop = f.get("drop", [""])[0]
             if drop != cur and re.fullmatch(r"[0-9a-f]{32}", drop):
                 drop_session(drop)
-                log_event("NMC: A session was logged off by %s." % WEB_USER)
+                log_event("NMC: A session was logged off by %s."
+                          % (sess.get("user") or WEB_USER))
             return self._redir("/config/ups?r=ok")
         if p == "/log/clear":
             _atomic_json(EVENTS_FILE, lambda old: [])
-            log_event("NMC: Event log cleared by %s." % WEB_USER)
+            log_event("NMC: Event log cleared by %s."
+                      % (sess.get("user") or WEB_USER))
             return self._redir("/log/event")
         if p == "/about/update/check":
             try:
@@ -5119,7 +5235,7 @@ class H(BaseHTTPRequestHandler):
                 "ok" if res[0] == "msg-ok" else "err", quote(res[1])))
         if p == "/about/update/settings":
             try:
-                res = do_update_settings(f)
+                res = do_update_settings(f, sess.get("user"))
             except Exception:
                 traceback.print_exc()
                 res = ("msg-err", "Settings could not be saved")
@@ -5127,7 +5243,7 @@ class H(BaseHTTPRequestHandler):
                 "ok" if res[0] == "msg-ok" else "err", quote(res[1])))
         if p == "/about/update/token":
             try:
-                res = do_update_token(f)
+                res = do_update_token(f, sess.get("user"))
             except Exception:
                 traceback.print_exc()
                 res = ("msg-err", "Token operation failed")
@@ -5141,7 +5257,8 @@ class H(BaseHTTPRequestHandler):
                 res = ("msg-err", "Update could not be started")
             if res[0] != "msg-ok":
                 return self._redir("/about/system?r=err&why=" + quote(res[1]))
-            log_event("NMC: Software update started by %s." % WEB_USER)
+            log_event("NMC: Software update started by %s."
+                      % (sess.get("user") or WEB_USER))
             return self._send(200, page("APC UPS", pg_update_apply(), d,
                                         "/about/system", "About", "System"),
                               extra={"Cache-Control": "no-store"})
@@ -5159,7 +5276,8 @@ class H(BaseHTTPRequestHandler):
             except Exception:
                 return self._redir("/about/system?r=err&why=" +
                                    quote("Rollback could not be started"))
-            log_event("NMC: Software rollback started by %s." % WEB_USER)
+            log_event("NMC: Software rollback started by %s."
+                      % (sess.get("user") or WEB_USER))
             return self._send(200, page("APC UPS", pg_update_apply(), d,
                                         "/about/system", "About", "System"),
                               extra={"Cache-Control": "no-store"})

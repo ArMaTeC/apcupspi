@@ -152,10 +152,15 @@ def test_role_gates():
     assert not web.role_post_ok("network", "/config/users")
     assert not web.role_post_ok("network", "/config/radius")
     assert web.role_get_ok("readonly", "/config/ups")
-    assert not web.role_get_ok("device", "/config/ups")
+    # device configures the UPS — it must reach the page its POST targets
+    assert web.role_get_ok("device", "/config/ups")
     assert web.role_get_ok("device", "/control/ups")
     assert web.role_get_ok("network", "/config/system")
     assert not web.role_get_ok("network", "/control/ups")
+    # self-service password change is open to every authenticated role
+    for r in ("device", "network", "readonly"):
+        assert web.role_post_ok(r, "/config/security"), r
+    assert not web.role_post_ok("readonly", "/config/users")
 
 
 def test_syslog_target():
@@ -308,6 +313,29 @@ def test_wifi_scan_parse():
     assert nets[0]["signal"] == 99            # strongest dup wins
     web._nmcli = lambda *a, timeout=15: (1, "err")
     assert web.wifi_scan() == []              # nmcli failure -> []
+
+
+def test_password_change_per_user(tmp_path):
+    conf = tmp_path / "nmc.conf"
+    conf.write_text("[web]\nx = 1\n\n[users]\nbob = device:pw12345\n")
+    web.CONF = str(conf)
+    web._cp.read(str(conf))
+    good = {"curp": ["pw12345"], "newp": ["newsecret1"],
+            "cfmp": ["newsecret1"]}
+    r = web.do_password_change(good, user="bob")
+    assert r[0] == "msg-ok", r
+    role, cred = web._parse_user_cred(web._cp.get("users", "bob"))
+    assert role == "device"                 # role preserved
+    assert web._cred_ok(cred, "newsecret1")  # new hash verifies
+    # wrong current password -> error, stored hash untouched
+    r = web.do_password_change(
+        {"curp": ["nope"], "newp": ["x123456"], "cfmp": ["x123456"]},
+        user="bob")
+    assert r[0] == "msg-err"
+    # no local account -> treated as RADIUS-managed, no phantom entry
+    r = web.do_password_change(good, user="ghost")
+    assert r[0] == "msg-err" and "authentication server" in r[1]
+    assert "ghost" not in web._cp.options("users")
 
 
 def test_datalog_page():
