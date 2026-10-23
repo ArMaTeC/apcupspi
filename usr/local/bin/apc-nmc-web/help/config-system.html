@@ -1,60 +1,49 @@
-<p><b>Configuration &rsaquo; System</b> groups the system-level management
-cards. Some are Administrator-only; Read-Only sees them greyed out.</p>
-
-<h4>User Management</h4>
-<ul>
- <li>Add/edit/delete local web users (in addition to the default
-  <code>apc</code> account).</li>
- <li>Each user gets one of four roles — Administrator, Device, Network or
-  Read-Only. Details in <a href="/help/roles">Roles</a>.</li>
- <li><b>Session Timeout</b> controls how long a login stays valid.</li>
-</ul>
-
-<h4>RADIUS Authentication</h4>
-<table>
- <tr><th>Field</th><th>Meaning</th></tr>
- <tr><td>Enabled</td><td>Check logins against RADIUS first, then local accounts</td></tr>
- <tr><td>Server / Port</td><td>RADIUS address and auth port (usually 1812)</td></tr>
- <tr><td>Shared Secret</td><td>Secret shared with the RADIUS server</td></tr>
- <tr><td>Timeout (s)</td><td>Wait for a reply before falling back to local auth</td></tr>
- <tr><td>Assigned Role</td><td>Role granted to RADIUS-authenticated users (e.g. Read-Only)</td></tr>
-</table>
+<p><b>Configuration &rsaquo; System</b> groups the network-level
+management cards. Roles without the matching capability see the
+controls greyed out. User accounts, RADIUS and sessions have moved to
+<b>Users &rsaquo; User Access</b>.</p>
 
 <h4>Network Services</h4>
 <ul>
  <li><b>Modbus TCP:</b> serves UPS registers to BMS/SCADA clients — bind
   address, port (default 502), Unit ID, optional write access for UPS
   commands. Register map: <code>docs/modbus-registers.md</code>.</li>
- <li><b>FTP Server:</b> chrooted vsftpd for file transfer — enable only when
-  needed and open the port in the firewall.</li>
+ <li><b>FTP Server:</b> chrooted vsftpd for file transfer — enable only
+  when needed and open the port in the firewall.</li>
  <li><b>MQTT Telemetry:</b> publishes UPS state JSON to
   <code>&lt;prefix&gt;/state</code> every Interval seconds — host, port,
-  TLS, credentials. <b>Save &amp; Test</b> sends a trial publish; the last
-  publish result shows under the form.</li>
+  TLS, credentials. <b>Save &amp; Test</b> sends a trial publish; the
+  last publish result shows under the form.</li>
 </ul>
 
 <h4>Firewall</h4>
-<p>Manages nftables input rules: extra TCP/UDP ports to allow and optional
-source-CIDR restrictions. SSH/HTTP/HTTPS/NUT stay open. Be careful not to
-close the port you're connected through.</p>
+<p>Manages nftables input rules: extra TCP/UDP ports to allow and
+optional source-CIDR restrictions. SSH/HTTP/HTTPS/NUT stay open. Be
+careful not to close the port you're connected through.</p>
 
 <h4>Wired Port Authentication (802.1X)</h4>
 <p>Ethernet port authentication for NAC-protected switches — <b>not</b>
-WiFi. Pick the wired interface, EAP method (PEAP/TTLS use a password; TLS
-uses client certs), identity and credentials. Leave disabled on a normal
-LAN.</p>
+WiFi. Pick the wired interface, EAP method (PEAP/TTLS use a password;
+TLS uses client certs), identity and credentials. Leave disabled on a
+normal LAN.</p>
 
 <h4>WiFi Setup</h4>
 <ul>
- <li><b>Join a network:</b> SSID + passphrase; <b>Scan</b> lists detected
-  networks.</li>
+ <li><b>Join a network:</b> SSID + passphrase; <b>Scan</b> lists
+  detected networks (requires the Network capability).</li>
  <li><b>Wireless Hardware:</b> fully enable/disable onboard WiFi and
-  Bluetooth at boot level (dtoverlay). Changes need a <b>reboot</b>; the
-  card shows &quot;pending reboot&quot; until then.</li>
+  Bluetooth at boot level (dtoverlay). Changes need a <b>reboot</b>;
+  the card shows &quot;pending reboot&quot; until then. Requires the
+  System capability.</li>
 </ul>
-<p class="note">Disabling the radio you're connected through cuts access —
-confirm you have an alternative path (Ethernet) first.</p>
+<p class="note">Disabling the radio you're connected through cuts
+access — confirm you have an alternative path (Ethernet) first.</p>
 
 <h4>Secure Boot</h4>
 <p>Shows secure-boot / boot-integrity status (background in
 <code>docs/secure-boot.md</code>).</p>
+
+<h4>Accounts</h4>
+<p>User accounts, the permission matrix, RADIUS and active sessions
+live on <a href="/config/users">Users &rsaquo; User Access</a> — see
+<a href="/help/roles">Roles</a> for the capability model.</p>

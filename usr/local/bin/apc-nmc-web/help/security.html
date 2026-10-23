@@ -1,11 +1,13 @@
 <p>Security and data-management areas: password changes, sessions,
-backup/restore and the API token.</p>
+backup/restore and the API token. Account controls live on
+<b>Users &rsaquo; User Access</b>.</p>
 
 <h4>Changing Your Password</h4>
 <ul>
- <li>The Change Password card updates <b>your own account only</b> — even
-  admins change their own password here (user passwords are managed on
-  Configuration &rsaquo; System).</li>
+ <li>The Change Password card (Users &rsaquo; User Access) updates
+  <b>your own account only</b> — even
+  admins change their own password here (other accounts are managed on
+  Users &rsaquo; User Access).</li>
  <li>RADIUS-only users have no local credential — they see
   &quot;managed by the authentication server&quot;.</li>
  <li>Passwords are stored as PBKDF2 hashes in <code>nmc.conf</code>.</li>

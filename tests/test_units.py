@@ -1,5 +1,6 @@
 """Thin unit layer for apc-nmc-web pure functions and the updater's
 version comparison — no NUT/UPS hardware needed."""
+import configparser
 import hashlib
 import importlib.util
 import io
@@ -154,16 +155,73 @@ def test_role_gates():
     assert web.role_post_ok("network", "/config/firewall")
     assert not web.role_post_ok("network", "/config/users")
     assert not web.role_post_ok("network", "/config/radius")
-    assert web.role_get_ok("readonly", "/config/ups")
-    # device configures the UPS — it must reach the page its POST targets
-    assert web.role_get_ok("device", "/config/ups")
-    assert web.role_get_ok("device", "/control/ups")
-    assert web.role_get_ok("network", "/config/system")
-    assert not web.role_get_ok("network", "/control/ups")
+    # every logged-in role may view every page; caps gate the actions
+    for r in ("device", "network", "readonly"):
+        assert web.role_get_ok(r, "/config/system"), r
+        assert web.role_get_ok(r, "/control/ups"), r
     # self-service password change is open to every authenticated role
     for r in ("device", "network", "readonly"):
         assert web.role_post_ok(r, "/config/security"), r
     assert not web.role_post_ok("readonly", "/config/users")
+
+
+def test_role_caps(monkeypatch):
+    cp = configparser.RawConfigParser()
+    monkeypatch.setattr(web, "_cp", cp)
+    # defaults apply while [roles] is unset — matches the shipped model
+    assert web.role_caps("device") == {"ups", "control"}
+    assert web.role_caps("network") == {"notify", "network"}
+    assert web.role_caps("readonly") == set()
+    # a configured list overrides the defaults
+    cp.add_section("roles")
+    cp.set("roles", "device", "ups accounts")
+    assert web.role_caps("device") == {"ups", "accounts"}
+    # unknown names are dropped
+    cp.set("roles", "device", "ups bogus")
+    assert web.role_caps("device") == {"ups"}
+    # an explicitly empty value is honoured (view-only role)
+    cp.set("roles", "device", "")
+    assert web.role_caps("device") == set()
+    # admin is always full and ignores the section
+    cp.set("roles", "admin", "")
+    assert web.role_caps("admin") == set(web.ROLE_CAPS)
+    # posts follow the capability list
+    cp.set("roles", "network", "accounts")
+    assert web.role_post_ok("network", "/config/users")
+    assert not web.role_post_ok("network", "/config/firewall")
+
+
+def test_do_roles(tmp_path, monkeypatch):
+    conf = tmp_path / "nmc.conf"
+    conf.write_text("[web]\nuser = apc\n")
+    monkeypatch.setattr(web, "CONF", str(conf))
+    form = {"cap_device_ups": ["1"], "cap_device_accounts": ["1"],
+            "cap_readonly_notify": ["1"]}
+    res = web.do_roles(form)
+    assert res[0] == "msg-ok"
+    assert web.cfg("roles", "device") == "accounts ups"
+    assert web.cfg("roles", "network") == ""       # cleared, not default
+    assert web.cfg("roles", "readonly") == "notify"
+    assert "admin" not in web.cfg("roles", "admin")  # admin untouched
+
+
+def test_pg_users_page():
+    h = web.pg_users({"__role": "admin", "__csrf": "x"}, "", "tok")
+    assert "User Accounts" in h and "Access Permissions" in h
+    assert "RADIUS" in h and "Change Password" in h
+    # admin sees an editable matrix (device has ups+control checked)
+    assert 'name="cap_device_ups" checked>' in h
+    assert 'name="cap_device_notify">' in h
+    # admin row is all-checked but disabled (not editable)
+    assert "Administrator always has full access" in h
+    # readonly: matrix renders with every checkbox disabled, no add form
+    ro = web.pg_users({"__role": "readonly", "__csrf": "x"}, "", "tok")
+    assert "Access Permissions" in ro
+    assert 'name="cap_device_ups" disabled>' in ro or \
+        'name="cap_device_ups" checked disabled' in ro
+    assert "Add User" not in ro
+    # but the self-service password form still renders for readonly
+    assert 'action="/config/security"' in ro
 
 
 def test_syslog_target():

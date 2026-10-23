@@ -620,30 +620,52 @@ def web_password_ok(pw):
 
 USER_ROLES = ("admin", "device", "network", "readonly")
 
-# Per-role capabilities. GET sets restrict which pages each role may view;
-# POST prefixes restrict which actions it may run. admin = everything.
-ROLE_GETS = {
-    "device": ("/home", "/status/", "/control/", "/test/", "/log/",
-               "/about/system", "/about/host", "/about/nut",
-               "/about/update/progress",
-               "/config/ups",                     # its own config page
-               "/events.txt", "/data.txt", "/datalog.json",
-               "/status.json", "/api/v1/", "/metrics"),
-    "network": ("/home", "/status/", "/config/", "/log/", "/about/",
-                "/events.txt", "/data.txt", "/datalog.json",
-                "/status.json", "/api/v1/", "/metrics"),
-    "readonly": None,                        # view everything
+# Capability map: cap -> (label, POST path-prefixes it grants). Every
+# logged-in role may VIEW all pages — cards only render the controls a
+# capability grants — and always gets the baseline self-service posts.
+# admin holds every capability and is not editable in the matrix;
+# other roles read their [roles] entry in nmc.conf (ROLE_CAP_DEFAULTS
+# when unset — an empty configured value is honoured, that's how a
+# role is reduced to baseline).
+ROLE_CAPS = {
+    "ups":      ("UPS Settings",
+                 ("/config/ups", "/config/outlets", "/status/battery")),
+    "control":  ("UPS Control & Tests",
+                 ("/control/", "/test/diag", "/test/schedule")),
+    "notify":   ("Notifications",
+                 ("/config/notify", "/config/notify/test")),
+    "network":  ("Network Services",
+                 ("/config/services", "/config/firewall",
+                  "/config/dot1x", "/config/wifi")),
+    "accounts": ("Accounts & RADIUS",
+                 ("/config/users", "/config/radius", "/config/roles")),
+    "system":   ("System & Updates",
+                 ("/config/sessions", "/config/backup", "/config/restore",
+                  "/config/support", "/log/clear", "/about/update/",
+                  "/config/wifi/hw")),
 }
-ROLE_POSTS = {
-    "device": ("/control/", "/test/diag", "/test/schedule",
-               "/status/battery",
-               "/config/ups", "/config/outlets", "/config/security"),
-    "network": ("/config/notify", "/config/services",
-                "/config/firewall", "/config/dot1x", "/config/wifi",
-                "/config/security"),
-    # self-service password change only — everything else is read-only
-    "readonly": ("/config/security",),
+ROLE_CAP_DEFAULTS = {
+    "device": ("ups", "control"),
+    "network": ("notify", "network"),
+    "readonly": (),
 }
+_BASE_POSTS = ("/config/security",)      # own-password change, always on
+
+
+def role_caps(role):
+    """Effective capability set for a role."""
+    if role == "admin":
+        return set(ROLE_CAPS)
+    if _cp.has_option("roles", role):
+        return set(_cp.get("roles", role).split()) & set(ROLE_CAPS)
+    return set(ROLE_CAP_DEFAULTS.get(role, ()))
+
+
+def _role_posts(role):
+    posts = set(_BASE_POSTS)
+    for c in role_caps(role):
+        posts.update(ROLE_CAPS[c][1])
+    return tuple(posts)
 
 
 def _prefix_ok(path, prefixes):
@@ -655,14 +677,14 @@ def _prefix_ok(path, prefixes):
 
 
 def role_get_ok(role, path):
-    if path in ("/", "/home.htm", "/NMC.htm", "/logoff"):
-        return True
-    allow = ROLE_GETS.get(role)
-    return allow is None or _prefix_ok(path, allow)
+    # every logged-in role may view every page; the page renders only
+    # the controls its capabilities unlock. Sensitive downloads are
+    # gated inline in do_GET via role_post_ok instead.
+    return True
 
 
 def role_post_ok(role, path):
-    return role == "admin" or _prefix_ok(path, ROLE_POSTS.get(role, ()))
+    return role == "admin" or _prefix_ok(path, _role_posts(role))
 
 
 def _parse_user_cred(stored):
@@ -1855,6 +1877,7 @@ _SVG = {
     "logs": '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>',
     "about": '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>',
     "help": '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 2.4-3 4"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
+    "users": '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
 }
 
 NAV = [
@@ -1865,6 +1888,8 @@ NAV = [
       ("Outlet Groups", "/control/outlets")]),
     ("Configuration", "/config/ups", "config",
      [("UPS", "/config/ups"), ("System", "/config/system")]),
+    ("Users", "/config/users", "users",
+     [("User Access", "/config/users")]),
     ("Tests", "/test/diag", "tests", [("Diagnostics", "/test/diag")]),
     ("Logs", "/log/event", "logs",
      [("Event Log", "/log/event"), ("Data Log", "/log/data"),
@@ -2874,7 +2899,7 @@ changes first.</p></div></div>""" % (
         rt_head, rt_rows, tbtns)
     # Role-aware cards: hide actions the session's role can't POST so
     # the page shows controls that actually work (device gets the UPS
-    # form, network gets notifications, everyone gets password change).
+    # form, network gets notifications).
     role = d.get("__role", "admin")
     if not role_post_ok(role, "/config/notify"):
         ncard = ""
@@ -2882,13 +2907,8 @@ changes first.</p></div></div>""" % (
                '</button> <a class="btn sec" href="/config/ups">Cancel'
                '</a></div>'
                if role_post_ok(role, "/config/ups") else "")
-    othersform = bkcard = ""
+    bkcard = ""
     if role == "admin":
-        othersform = ('<form method="post" action="/config/sessions" '
-                      'style="margin-top:12px">%s'
-                      '<input type="hidden" name="act" value="others">'
-                      '<button class="btn sec">Log off all other '
-                      'sessions</button></form>' % csrf_input(d))
         bkcard = """<div class="card"><h3>Backup / Restore</h3><div class="pad">
 <p class="mut" style="margin-top:0">Download a backup of the card
 configuration and state, or restore one. Restoring replaces
@@ -2924,23 +2944,6 @@ nmc.conf and card state, then restarts this interface.</p>
 %s
 </form></div></div>
 %s
-<div class="card"><h3>Change Password</h3><div class="pad">
-<form method="post" action="/config/security"><table class="kv">
-%s
-<tr><td class="lbl">Current Password<span class="tip" title="Your own current password — changes your account only">?</span></td><td><input name="curp" type="password" autocomplete="current-password"></td></tr>
-<tr><td class="lbl">New Password<span class="tip" title="Minimum 6 characters; stored as a hash in nmc.conf">?</span></td><td><input name="newp" type="password" minlength="6" autocomplete="new-password"></td></tr>
-<tr><td class="lbl">Confirm New Password</td><td><input name="cfmp" type="password" autocomplete="new-password"></td></tr>
-</table>
-<div style="margin-top:16px"><button class="btn">Change Password</button></div>
-</form></div></div>
-<div class="card"><h3>Active Sessions</h3><div class="pad">
-<table class="kv pgtbl"><tr><th style="text-align:left">Client</th>
-<th style="text-align:left">Started</th><th style="text-align:left">Expires</th>
-<th></th></tr>
-%s
-</table>
-%s
-</div></div>
 %s
 <script>var NMC_INIT={csrf:%s};</script><script>%s</script>
 <p class="note">Values the UPS can store are written to it via NUT SET VAR;
@@ -2958,59 +2961,48 @@ the rest are kept on the management card.</p>""" % (
         esc(d.get("input.transfer.high", "")),
         upsbtns,
         ncard,
-        csrf_input(d),
-        _sessions_rows(d, cur_tok, role == "admin"),
-        othersform,
         bkcard,
         json.dumps(d.get("__csrf", "")), _asset("config.js"))
 
 
-def pg_system(d, msg: "str | tuple" = ""):
-    """System & security configuration: user accounts, RADIUS, Modbus
-    TCP, FTP, firewall, 802.1X and secure-boot status."""
+def _sel(name, cur, opts):
+    o = "".join('<option value="%s"%s>%s</option>'
+                % (v, " selected" if v == cur else "", esc(t))
+                for v, t in opts)
+    return '<select name="%s">%s</select>' % (name, o)
+
+
+def _secf(name, cur, ph):
+    badge = (' <span class="note">(configured)</span>'
+             ' <label class="f" style="font-weight:normal">'
+             '<input type="checkbox" name="clr_%s"> clear</label>'
+             % name) if cur else ""
+    return ('<input name="%s" type="password" autocomplete="off" '
+            'maxlength="128" placeholder="%s">%s'
+            % (name, esc(ph), badge))
+
+
+def pg_users(d, msg: "str | tuple" = "", cur_tok=""):
+    """User Access page: accounts, per-role permission matrix, RADIUS,
+    active sessions and the self-service password form."""
     m = msgbox(msg)
-    admin = d.get("__role", "admin") == "admin"
+    role = d.get("__role", "admin")
+    admin = role == "admin"
     csrf = csrf_input(d)
-
-    def ro():
-        return ("" if admin else
-                '<p class="note">Only administrator accounts can change '
-                'this section.</p>')
-
-    def rof(path):
-        """(open, close) of a disabled fieldset for cards whose POST
-        target the session role can't reach — the whole card renders
-        but every input/button inside is visibly disabled."""
-        if role_post_ok(d.get("__role", "admin"), path):
-            return "", ""
-        return (('<fieldset disabled style="border:0;margin:0;'
-                 'padding:0;min-width:0">'), '</fieldset>')
-
-    def sel(name, cur, opts):
-        o = "".join('<option value="%s"%s>%s</option>'
-                    % (v, " selected" if v == cur else "", esc(t))
-                    for v, t in opts)
-        return '<select name="%s">%s</select>' % (name, o)
-
-    def secf(name, cur, ph):
-        badge = (' <span class="note">(configured)</span>'
-                 ' <label class="f" style="font-weight:normal">'
-                 '<input type="checkbox" name="clr_%s"> clear</label>'
-                 % name) if cur else ""
-        return ('<input name="%s" type="password" autocomplete="off" '
-                'maxlength="128" placeholder="%s">%s'
-                % (name, esc(ph), badge))
+    can_acc = role_post_ok(role, "/config/users")
+    can_rad = role_post_ok(role, "/config/radius")
+    can_sess = role_post_ok(role, "/config/sessions")
 
     # ---- user accounts -------------------------------------------------
     urows = ('<tr><td>%s</td><td>admin</td><td>'
-             '<span class="note">primary account &mdash; password via '
-             'Configuration &rsaquo; UPS</span></td></tr>' % esc(WEB_USER))
+             '<span class="note">primary account &mdash; password '
+             'below</span></td></tr>' % esc(WEB_USER))
     if _cp.has_section("users"):
         for name in sorted(set(_cp.options("users"))
                            - set(_cp.defaults())):
-            role, _cred = _parse_user_cred(_cp.get("users", name))
+            urole, _cred = _parse_user_cred(_cp.get("users", name))
             rm = ""
-            if admin:
+            if can_acc:
                 rm = ('<form method="post" action="/config/users" '
                       'style="display:inline">%s'
                       '<input type="hidden" name="act" value="del">'
@@ -3018,34 +3010,60 @@ def pg_system(d, msg: "str | tuple" = ""):
                       '<button class="btn sec">Remove</button></form>'
                       % (csrf, esc(name)))
             urows += ("<tr><td>%s</td><td>%s</td><td>%s</td></tr>"
-                      % (esc(name), esc(role), rm))
+                      % (esc(name), esc(urole), rm))
     addform = ""
-    if admin:
+    if can_acc:
         addform = """<form method="post" action="/config/users"><table class="kv">
 %s<input type="hidden" name="act" value="add">
 <tr><td class="lbl">User Name<span class="tip" title="Login name for the web UI — local account, separate from RADIUS">?</span></td><td><input name="uname" maxlength="32" required></td></tr>
-<tr><td class="lbl">Password</td><td><input name="upass" type="password" minlength="6" autocomplete="new-password" required></td></tr>
-<tr><td class="lbl">Role<span class="tip" title="Administrator: full access. Device: UPS only. Network: network/services only. Read-Only: view only">?</span></td><td>%s</td></tr>
+<tr><td class="lbl">Password<span class="tip" title="Minimum 6 characters; stored as a PBKDF2 hash">?</span></td><td><input name="upass" type="password" minlength="6" autocomplete="new-password" required></td></tr>
+<tr><td class="lbl">Role<span class="tip" title="Account group — its permissions come from the matrix below">?</span></td><td>%s</td></tr>
 </table><div style="margin-top:12px"><button class="btn">Add User</button></div>
-</form>""" % (csrf, sel("urole", "readonly",
-                      [(r, r.capitalize()) for r in USER_ROLES]))
+</form>""" % (csrf, _sel("urole", "readonly",
+                       [(r, r.capitalize()) for r in USER_ROLES]))
     ucard = """<div class="card"><h3>User Accounts</h3><div class="pad">
-<p class="mut" style="margin-top:0">Roles: <b>admin</b> full access;
-<b>device</b> UPS status, control and tests only; <b>network</b> network
-and notification configuration; <b>readonly</b> view only.</p>
+<p class="mut" style="margin-top:0">Each account belongs to a role; the
+role's capabilities are set in the Access Permissions matrix below.
+The primary <b>%s</b> account is always Administrator.</p>
 <table class="kv pgtbl"><tr><th style="text-align:left">User</th>
 <th style="text-align:left">Role</th><th></th></tr>%s</table>
-%s%s</div></div>""" % (urows, addform, ro())
+%s</div></div>""" % (esc(WEB_USER), urows, addform)
+
+    # ---- access permissions matrix -------------------------------------
+    chead = "".join('<th title="%s">%s</th>'
+                    % (esc(", ".join(posts)), esc(lab))
+                    for _, (lab, posts) in ROLE_CAPS.items())
+    mrows = ('<tr><td><b>Administrator</b></td>%s</tr>'
+             % "".join('<td><input type="checkbox" checked disabled '
+                       'title="Administrator always has full access">'
+                       '</td>' for _ in ROLE_CAPS))
+    for r in USER_ROLES[1:]:
+        cells = "".join(
+            '<td><input type="checkbox" name="cap_%s_%s"%s%s></td>'
+            % (r, c,
+               " checked" if c in role_caps(r) else "",
+               "" if admin else " disabled")
+            for c in ROLE_CAPS)
+        mrows += '<tr><td><b>%s</b></td>%s</tr>' % (r.capitalize(), cells)
+    mbtns = ('<div style="margin-top:14px"><button class="btn">Apply'
+             '</button></div>' if admin else
+             '<p class="note" style="margin-top:10px">Only administrator '
+             'accounts can change permissions.</p>')
+    mcard = """<div class="card"><h3>Access Permissions</h3><div class="pad">
+<p class="mut" style="margin-top:0">Which actions each account group may
+run. Every signed-in user can view all pages and change their own
+password &mdash; the matrix controls the write actions.<span class="tip" title="Hover a column header to see the exact paths it unlocks">?</span></p>
+<form method="post" action="/config/roles"><table class="ev">
+%s
+<tr><th style="text-align:left">Role</th>%s</tr>
+%s</table>
+%s</form></div></div>""" % (csrf, chead, mrows, mbtns)
 
     # ---- RADIUS --------------------------------------------------------
     r_en = cfg("radius", "enabled", "0") in ("1", "yes", "true", "on")
-    rcard = """<div class="card"><h3>RADIUS Authentication</h3><div class="pad">
-<p class="mut" style="margin-top:0">Fallback authentication for web
-logins &mdash; tried only when no local account matches (PAP over
-UDP/1812). RADIUS users get the configured role.
-Status: <b>%s</b></p>%s</div></div>""" % (
-        "enabled" if r_en else "disabled", (
-            """<form method="post" action="/config/radius"><table class="kv">
+    rform = ""
+    if can_rad:
+        rform = """<form method="post" action="/config/radius"><table class="kv">
 %s
 <tr><td class="lbl">Enabled<span class="tip" title="When on, logins are checked against RADIUS first, then local accounts">?</span></td><td><input type="checkbox" name="r_en"%s></td></tr>
 <tr><td class="lbl">Server</td><td><input name="r_srv" maxlength="64" value="%s" placeholder="radius.example.com"></td></tr>
@@ -3058,13 +3076,69 @@ Status: <b>%s</b></p>%s</div></div>""" % (
             csrf, " checked" if r_en else "",
             esc(cfg("radius", "server", "")),
             esc(cfg("radius", "port", "1812")),
-            secf("r_secret", cfg("radius", "secret", ""), "shared secret"),
+            _secf("r_secret", cfg("radius", "secret", ""),
+                  "shared secret"),
             esc(cfg("radius", "timeout", "4")),
-            sel("r_role", cfg("radius", "role", "readonly").lower(),
-                [(r, r.capitalize()) for r in USER_ROLES]))
-        if admin else
-        '<p class="note">Only administrator accounts can change this '
-        'section.</p>'))
+            _sel("r_role", cfg("radius", "role", "readonly").lower(),
+                 [(r, r.capitalize()) for r in USER_ROLES]))
+    else:
+        rform = ('<p class="note">Only accounts with the Accounts '
+                 'capability can change this section.</p>')
+    rcard = """<div class="card"><h3>RADIUS Authentication</h3><div class="pad">
+<p class="mut" style="margin-top:0">Fallback authentication for web
+logins &mdash; tried only when no local account matches (PAP over
+UDP/1812). RADIUS users get the configured role.
+Status: <b>%s</b></p>%s</div></div>""" % (
+        "enabled" if r_en else "disabled", rform)
+
+    # ---- sessions + self-service password ------------------------------
+    othersform = ""
+    if can_sess:
+        othersform = ('<form method="post" action="/config/sessions" '
+                      'style="margin-top:12px">%s'
+                      '<input type="hidden" name="act" value="others">'
+                      '<button class="btn sec">Log off all other '
+                      'sessions</button></form>' % csrf)
+    scard = """<div class="card"><h3>Active Sessions</h3><div class="pad">
+<table class="kv pgtbl"><tr><th style="text-align:left">Client</th>
+<th style="text-align:left">Started</th><th style="text-align:left">Expires</th>
+<th></th></tr>
+%s
+</table>
+%s
+</div></div>""" % (_sessions_rows(d, cur_tok, can_sess), othersform)
+    pcard = """<div class="card"><h3>Change Password</h3><div class="pad">
+<form method="post" action="/config/security"><table class="kv">
+%s
+<tr><td class="lbl">Current Password<span class="tip" title="Your own current password — changes your account only">?</span></td><td><input name="curp" type="password" autocomplete="current-password"></td></tr>
+<tr><td class="lbl">New Password<span class="tip" title="Minimum 6 characters; stored as a hash in nmc.conf">?</span></td><td><input name="newp" type="password" minlength="6" autocomplete="new-password"></td></tr>
+<tr><td class="lbl">Confirm New Password</td><td><input name="cfmp" type="password" autocomplete="new-password"></td></tr>
+</table>
+<div style="margin-top:16px"><button class="btn">Change Password</button></div>
+</form></div></div>""" % csrf
+
+    return """<h1 class="page">User Access</h1>%s
+%s%s%s%s%s""" % (m, ucard, mcard, rcard, scard, pcard)
+
+
+def pg_system(d, msg: "str | tuple" = ""):
+    """System & network configuration: Modbus TCP, FTP, MQTT, firewall,
+    802.1X, WiFi and secure-boot status."""
+    m = msgbox(msg)
+    admin = d.get("__role", "admin") == "admin"
+    csrf = csrf_input(d)
+
+    def rof(path):
+        """(open, close) of a disabled fieldset for cards whose POST
+        target the session role can't reach — the whole card renders
+        but every input/button inside is visibly disabled."""
+        if role_post_ok(d.get("__role", "admin"), path):
+            return "", ""
+        return (('<fieldset disabled style="border:0;margin:0;'
+                 'padding:0;min-width:0">'), '</fieldset>')
+
+    sel = _sel
+    secf = _secf
 
     # ---- network services ----------------------------------------------
     mb_en, mb_act = svc_state("apc-nmc-modbus.service")
@@ -3351,8 +3425,7 @@ provisioning by hand &mdash; see docs/secure-boot.md. It cannot be
 enabled from this interface.</p></div></div>""" % esc(sb)
 
     return """<h1 class="page">System Configuration</h1>%s
-%s%s%s%s%s%s%s""" % (m, ucard, rcard, scard, fwcard, dxcard,
-                     wcard, sbcard)
+%s%s%s%s%s""" % (m, scard, fwcard, dxcard, wcard, sbcard)
 
 
 def pg_events(d, msg=""):
@@ -4952,6 +5025,17 @@ def do_users(form):
     return ("msg-ok", "User %s added (%s)." % (name, role))
 
 
+def do_roles(form):
+    """Persist the Access Permissions matrix — one [roles] key per
+    non-admin role holding its space-separated capability list."""
+    for role in USER_ROLES[1:]:          # admin is fixed to all caps
+        caps = sorted(c for c in ROLE_CAPS
+                      if form.get("cap_%s_%s" % (role, c)))
+        conf_set("roles", role, " ".join(caps))
+    log_event("NMC: Role permissions updated.")
+    return ("msg-ok", "Role permissions saved.")
+
+
 def do_radius(form):
     def v(k):
         return form.get(k, [""])[0].strip()
@@ -5440,9 +5524,11 @@ class H(BaseHTTPRequestHandler):
                                   "text/plain")
             return self._redir("/login?next=" + quote(p))
         role = sess.get("role", "admin")
-        # config backup holds every credential — administrator only
+        # pages are view-only for every role; sensitive downloads are
+        # capability-gated (backup/restore hold every credential).
         if not role_get_ok(role, p) or \
-                (p == "/config/backup" and role != "admin"):
+                (p == "/config/backup"
+                 and not role_post_ok(role, "/config/backup")):
             return self._page(403, pg_403(), {}, p)
         if p == "/datalog.json":
             data = load_data()
@@ -5464,11 +5550,13 @@ class H(BaseHTTPRequestHandler):
                 data = [r for r in data if r.get("ts", 0) > cut]
             return self._send(200, json.dumps(data), "application/json")
         if p == "/config/wifi/scan":
+            if not role_post_ok(role, "/config/wifi"):
+                return self._send(403, "forbidden\n", "text/plain")
             q = parse_qs(urlparse(self.path).query)
             return self._send(200, json.dumps(
                 wifi_scan(q.get("if", [""])[0])), "application/json")
         if p == "/config/support.tgz":
-            if role != "admin":
+            if not role_post_ok(role, "/config/support"):
                 return self._page(403, pg_403(), {}, p)
             return self._send(200, support_bundle(), "application/gzip",
                               {"Content-Disposition":
@@ -5610,6 +5698,16 @@ class H(BaseHTTPRequestHandler):
                     msg = ("msg-err", q.get("why", ["Save failed"])[0])
                 b = pg_system(d, msg)
                 section, leaf = "Configuration", "System"
+            elif p == "/config/users":
+                q = parse_qs(urlparse(self.path).query)
+                msg = ""
+                if q.get("r", [""])[0] == "ok":
+                    msg = ("msg-ok", q.get("why", [""])[0]
+                           or "Saved.")
+                elif q.get("r", [""])[0] == "err":
+                    msg = ("msg-err", q.get("why", ["Save failed"])[0])
+                b = pg_users(d, msg, self._token() or "")
+                section, leaf = "Users", "User Access"
             elif p == "/log/event":
                 b = pg_events(d)
                 section, leaf = "Logs", "Event Log"
@@ -5697,8 +5795,9 @@ class H(BaseHTTPRequestHandler):
             return self._redir("/login")
         role = sess.get("role", "admin")
         if p == "/config/restore":
-            if role != "admin":      # restore can rewrite users/config
-                return self._send(403, "administrator role required")
+            if not role_post_ok(role, "/config/restore"):
+                return self._send(403,
+                                  "system capability required")
             q = parse_qs(urlparse(self.path).query)
             if not self._check_csrf({"_csrf": q.get("_csrf", [""])}):
                 return self._send(403, "Session token missing or expired - "
@@ -5836,21 +5935,26 @@ class H(BaseHTTPRequestHandler):
         if p == "/config/security":
             res = do_password_change(f, sess.get("user"))
             if res[0] == "msg-ok":
-                return self._redir("/config/ups?r=ok")
-            return self._redir("/config/ups?r=err&why=" + quote(res[1]))
-        # Boot-config radio toggles + reboot are admin-only even though
-        # they share the network role's /config/wifi path — they edit
+                return self._redir("/config/users?r=ok")
+            return self._redir("/config/users?r=err&why="
+                               + quote(res[1]))
+        # Boot-config radio toggles + reboot are gated on the "system"
+        # capability even though they share /config/wifi — they edit
         # /boot and can take the whole card offline.
-        if p == "/config/wifi" and role != "admin" and \
+        if p == "/config/wifi" and \
+                not role_post_ok(role, "/config/wifi/hw") and \
                 f.get("act", [""])[0] in ("hw_enable", "hw_disable",
                                           "reboot"):
             return self._page(403, pg_403(), {}, p)
-        for pp, fn in (("/config/users", do_users),
-                       ("/config/radius", do_radius),
-                       ("/config/services", do_services),
-                       ("/config/firewall", do_firewall),
-                       ("/config/dot1x", do_dot1x),
-                       ("/config/wifi", do_wifi)):
+        for pp, fn, dest in (("/config/users", do_users, "/config/users"),
+                             ("/config/roles", do_roles, "/config/users"),
+                             ("/config/radius", do_radius, "/config/users"),
+                             ("/config/services", do_services,
+                              "/config/system"),
+                             ("/config/firewall", do_firewall,
+                              "/config/system"),
+                             ("/config/dot1x", do_dot1x, "/config/system"),
+                             ("/config/wifi", do_wifi, "/config/system")):
             if p == pp:
                 try:
                     res = fn(f)
@@ -5858,9 +5962,9 @@ class H(BaseHTTPRequestHandler):
                     traceback.print_exc()
                     res = ("msg-err", "Save failed")
                 if res[0] == "msg-ok":
-                    return self._redir("/config/system?r=ok&why="
+                    return self._redir(dest + "?r=ok&why="
                                        + quote(res[1]))
-                return self._redir("/config/system?r=err&why="
+                return self._redir(dest + "?r=err&why="
                                    + quote(res[1]))
         if p == "/config/sessions":
             cur = self._token() or ""
@@ -5871,13 +5975,13 @@ class H(BaseHTTPRequestHandler):
                     _persist_sessions()
                 log_event("NMC: All other sessions logged off by %s."
                           % (sess.get("user") or WEB_USER))
-                return self._redir("/config/ups?r=ok")
+                return self._redir("/config/users?r=ok")
             drop = f.get("drop", [""])[0]
             if drop != cur and re.fullmatch(r"[0-9a-f]{32}", drop):
                 drop_session(drop)
                 log_event("NMC: A session was logged off by %s."
                           % (sess.get("user") or WEB_USER))
-            return self._redir("/config/ups?r=ok")
+            return self._redir("/config/users?r=ok")
         if p == "/log/clear":
             _atomic_json(EVENTS_FILE, lambda old: [])
             log_event("NMC: Event log cleared by %s."

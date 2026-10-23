@@ -67,7 +67,7 @@ flowchart LR
 | � **MQTT Telemetry** | Periodic JSON publish of the key UPS readings to a broker (`<topic>/state`) for Home Assistant / Node-RED — TLS, auth and a test-publish button |
 | ⏱️ **Scheduling** | Weekly self-test and scheduled UPS power-off (`shutdown.return`/`stayoff`) from the Diagnostics page |
 | 🧰 **Support Bundle** | One-click `support.tgz` download — sanitized config, events, service states and recent journals, secrets redacted |
-| �👥 **User Roles** | 4-tier access (admin / device / network / readonly) with per-page and per-action enforcement, plus **RADIUS** fallback auth for web logins |
+| �👥 **User Roles** | 4 account groups (admin / device / network / readonly) on a dedicated **User Access** page with a configurable **permissions matrix** — 6 capabilities (UPS, control, notifications, network, accounts, system) assignable per role, plus **RADIUS** fallback auth |
 | 🛡️ **Network Security** | nftables firewall + wired **802.1X** (EAPoL) configured from the UI, optional chrooted **FTP server**, secure-boot status reporting |
 | ❓ **In-App Help** | Full built-in documentation (16 topics — every page, roles, API, glossary, troubleshooting) plus `?` tooltips on form fields |
 

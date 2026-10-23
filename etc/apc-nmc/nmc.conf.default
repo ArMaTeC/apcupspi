@@ -134,3 +134,21 @@ verify = checksum
 # daily background check via apc-nmc-update-check.timer; 0 disables it
 # (manual checks and updates still work)
 autocheck = 1
+
+[roles]
+# Per-role capability lists, edited from Users > User Access >
+# Access Permissions. Space-separated capability names per role;
+# 'admin' always has every capability and cannot be changed here.
+# Capabilities: ups control notify network accounts system
+#   ups      = UPS settings + battery marker (config/ups, outlets, status/battery)
+#   control  = UPS control commands + diagnostics/schedules
+#   notify   = notification channel configuration + tests
+#   network  = services, firewall, 802.1X, WiFi setup
+#   accounts = user accounts, RADIUS, the permissions matrix itself
+#   system   = sessions, backup/restore, updates, support bundle,
+#              event-log clear, boot-level radio toggles
+# An unset key uses the built-in default; an EMPTY value is honoured
+# (that is how a role is reduced to view-only + own-password).
+#device = ups control
+#network = notify network
+#readonly =

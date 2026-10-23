@@ -1,30 +1,41 @@
-<p>The card has four access tiers, summarised below. Your role is fixed at
-login and shown beside your name in the top bar.</p>
+<p>Every account belongs to one of four <b>roles</b> (account groups):
+Administrator, Device, Network and Read-Only. What each role may do is
+set on <b>Users &rsaquo; User Access &rsaquo; Access Permissions</b> —
+a checkbox matrix of roles against capabilities.</p>
 
+<h4>The Access Permissions matrix</h4>
 <table>
- <tr><th>Capability</th><th>Admin</th><th>Device</th><th>Network</th><th>Read-Only</th></tr>
- <tr><td>View all pages</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td></tr>
- <tr><td>Change own password</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td></tr>
- <tr><td>UPS settings</td><td>&#10004;</td><td>&#10004;</td><td>&mdash;</td><td>&mdash;</td></tr>
- <tr><td>UPS control commands</td><td>&#10004;</td><td>&#10004;</td><td>&mdash;</td><td>&mdash;</td></tr>
- <tr><td>Self-test / calibration / schedules</td><td>&#10004;</td><td>&#10004;</td><td>&mdash;</td><td>&mdash;</td></tr>
- <tr><td>Notification settings</td><td>&#10004;</td><td>&mdash;</td><td>&#10004;</td><td>&mdash;</td></tr>
- <tr><td>Services / firewall / 802.1X / WiFi</td><td>&#10004;</td><td>&mdash;</td><td>&#10004;</td><td>&mdash;</td></tr>
- <tr><td>User management</td><td>&#10004;</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td></tr>
- <tr><td>Backup/restore, updates, API token</td><td>&#10004;</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td></tr>
- <tr><td>Clear event log / support bundle</td><td>&#10004;</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td></tr>
+ <tr><th>Capability</th><th>Unlocks</th><th>Default</th></tr>
+ <tr><td><b>UPS Settings</b></td><td>UPS configuration form, outlet-group settings, &quot;Battery Replaced&quot;</td><td>Device</td></tr>
+ <tr><td><b>UPS Control &amp; Tests</b></td><td>Control commands, self-test, calibration, schedules</td><td>Device</td></tr>
+ <tr><td><b>Notifications</b></td><td>Alert channel configuration and test buttons</td><td>Network</td></tr>
+ <tr><td><b>Network Services</b></td><td>Modbus/FTP/MQTT, firewall, 802.1X, WiFi setup</td><td>Network</td></tr>
+ <tr><td><b>Accounts &amp; RADIUS</b></td><td>Add/remove users, RADIUS settings, this matrix</td><td>Admin only</td></tr>
+ <tr><td><b>System &amp; Updates</b></td><td>Sessions, backup/restore, software updates, support bundle, log clear, boot radio toggles</td><td>Admin only</td></tr>
 </table>
-
-<h4>Notes</h4>
 <ul>
- <li><b>Device Only</b> is for operators who manage the UPS but must not
-  touch network settings.</li>
- <li><b>Network-Only</b> is the reverse — manages network/services but
-  can't send UPS commands.</li>
- <li><b>Read-Only</b> is for monitoring — every page is visible but
-  controls are hidden or disabled; forms render greyed out.</li>
- <li>Controls your role can't use are either not rendered or disabled;
-  even a hand-typed POST URL is rejected with 403.</li>
- <li>RADIUS users get the role set in &quot;Assigned Role&quot; under
-  RADIUS settings.</li>
+ <li><b>Administrator</b> always has every capability — its row is locked
+  so it can't be weakened by accident.</li>
+ <li>Every signed-in user can <b>view</b> all pages and change their own
+  password regardless of the matrix; the matrix controls write actions.
+  Controls a role lacks simply don't render (or appear disabled).</li>
+ <li>Unchecking every box for a role reduces it to view-only + own
+  password — that's honoured, not reverted to defaults.</li>
+ <li>Changes apply on save (no restart needed) and are stored under
+  <code>[roles]</code> in <code>nmc.conf</code>.</li>
+ <li>RADIUS-authenticated users get the role picked in
+  &quot;Assigned Role&quot; — that role's matrix row decides their
+  access.</li>
 </ul>
+
+<h4>The four roles</h4>
+<table>
+ <tr><th>Role</th><th>Intended use</th></tr>
+ <tr><td>Administrator</td><td>Full control — fixed, cannot be edited</td></tr>
+ <tr><td>Device Only</td><td>Operators who manage the UPS but not network settings</td></tr>
+ <tr><td>Network-Only</td><td>Manages network/services/notifications, no UPS commands</td></tr>
+ <tr><td>Read-Only</td><td>Monitoring only — no actions by default</td></tr>
+</table>
+<p>Even with an edited matrix the server enforces the same capabilities —
+a hand-typed POST to a page the role can't use returns 403 and is
+logged.</p>
