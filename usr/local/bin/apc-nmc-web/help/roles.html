@@ -1,24 +1,30 @@
-<p>کارت چهار سطح دسترسی دارد که در جدول زیر خلاصه شده‌اند. نقش هر کاربر هنگام ورود تعیین می‌شود و کنار نام او در نوار بالا نمایش داده می‌شود.</p>
+<p>The card has four access tiers, summarised below. Your role is fixed at
+login and shown beside your name in the top bar.</p>
 
 <table>
- <tr><th>قابلیت</th><th>Admin</th><th>Device</th><th>Network</th><th>Read-Only</th></tr>
- <tr><td>مشاهده همه صفحات</td><td>✔</td><td>✔</td><td>✔</td><td>✔</td></tr>
- <tr><td>تغییر رمز خودش</td><td>✔</td><td>✔</td><td>✔</td><td>✔</td></tr>
- <tr><td>تنظیمات UPS</td><td>✔</td><td>✔</td><td>—</td><td>—</td></tr>
- <tr><td>فرمان کنترلی UPS</td><td>✔</td><td>✔</td><td>—</td><td>—</td></tr>
- <tr><td>خودآزمایی / کالیبراسیون / زمان‌بندی</td><td>✔</td><td>✔</td><td>—</td><td>—</td></tr>
- <tr><td>تنظیمات اعلان‌ها</td><td>✔</td><td>—</td><td>✔</td><td>—</td></tr>
- <tr><td>سرویس‌ها / فایروال / 802.1X / WiFi</td><td>✔</td><td>—</td><td>✔</td><td>—</td></tr>
- <tr><td>مدیریت کاربران</td><td>✔</td><td>—</td><td>—</td><td>—</td></tr>
- <tr><td>Backup/Restore، Update، API Token</td><td>✔</td><td>—</td><td>—</td><td>—</td></tr>
- <tr><td>پاک کردن Event Log / Support Bundle</td><td>✔</td><td>—</td><td>—</td><td>—</td></tr>
+ <tr><th>Capability</th><th>Admin</th><th>Device</th><th>Network</th><th>Read-Only</th></tr>
+ <tr><td>View all pages</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td></tr>
+ <tr><td>Change own password</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td></tr>
+ <tr><td>UPS settings</td><td>&#10004;</td><td>&#10004;</td><td>&mdash;</td><td>&mdash;</td></tr>
+ <tr><td>UPS control commands</td><td>&#10004;</td><td>&#10004;</td><td>&mdash;</td><td>&mdash;</td></tr>
+ <tr><td>Self-test / calibration / schedules</td><td>&#10004;</td><td>&#10004;</td><td>&mdash;</td><td>&mdash;</td></tr>
+ <tr><td>Notification settings</td><td>&#10004;</td><td>&mdash;</td><td>&#10004;</td><td>&mdash;</td></tr>
+ <tr><td>Services / firewall / 802.1X / WiFi</td><td>&#10004;</td><td>&mdash;</td><td>&#10004;</td><td>&mdash;</td></tr>
+ <tr><td>User management</td><td>&#10004;</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td></tr>
+ <tr><td>Backup/restore, updates, API token</td><td>&#10004;</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td></tr>
+ <tr><td>Clear event log / support bundle</td><td>&#10004;</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td></tr>
 </table>
 
-<h4>نکات</h4>
+<h4>Notes</h4>
 <ul>
- <li><b>Device Only</b> برای اپراتورهایی است که فقط باید UPS را مدیریت کنند و به تنظیمات شبکه دست نزنند.</li>
- <li><b>Network-Only</b> برعکس — شبکه و سرویس‌ها را مدیریت می‌کند ولی به UPS فرمان نمی‌فرستد.</li>
- <li><b>Read-Only</b> برای مانیتورینگ — همه صفحات را می‌بیند ولی هیچ کنترل فعالی ندارد؛ فرم‌ها برایش غیرفعال (خاکستری) دیده می‌شوند.</li>
- <li>کنترل‌هایی که نقش شما اجازه ندارد اصلاً رندر نمی‌شوند یا disabled‌اند؛ حتی اگر URL را دستی بزنید هم سرور 403 برمی‌گرداند.</li>
- <li>نقش کاربران RADIUS از فیلد «Default Role» تنظیمات RADIUS می‌آید.</li>
+ <li><b>Device Only</b> is for operators who manage the UPS but must not
+  touch network settings.</li>
+ <li><b>Network-Only</b> is the reverse — manages network/services but
+  can't send UPS commands.</li>
+ <li><b>Read-Only</b> is for monitoring — every page is visible but
+  controls are hidden or disabled; forms render greyed out.</li>
+ <li>Controls your role can't use are either not rendered or disabled;
+  even a hand-typed POST URL is rejected with 403.</li>
+ <li>RADIUS users get the role set in &quot;Assigned Role&quot; under
+  RADIUS settings.</li>
 </ul>

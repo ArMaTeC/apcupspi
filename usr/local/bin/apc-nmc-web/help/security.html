@@ -1,27 +1,42 @@
-<p>این صفحه به بخش‌های امنیتی و نگهداشت داده مربوط است: تغییر رمز، نشست‌ها، پشتیبان‌گیری و توکن API.</p>
+<p>Security and data-management areas: password changes, sessions,
+backup/restore and the API token.</p>
 
-<h4>تغییر رمز عبور</h4>
+<h4>Changing Your Password</h4>
 <ul>
- <li>در کارت Change Password رمز فعلی و رمز جدید را وارد کنید. این کار <b>فقط رمز خودتان</b> را عوض می‌کند — حتی ادمین هم از همین‌جا رمز خودش را عوض می‌کند.</li>
- <li>کاربرانی که فقط از RADIUS احراز می‌شوند حساب محلی ندارند؛ پیام «managed by the authentication server» می‌گیرند.</li>
- <li>رمز جدید به‌صورت هش (PBKDF2) در <code>nmc.conf</code> ذخیره می‌شود.</li>
+ <li>The Change Password card updates <b>your own account only</b> — even
+  admins change their own password here (user passwords are managed on
+  Configuration &rsaquo; System).</li>
+ <li>RADIUS-only users have no local credential — they see
+  &quot;managed by the authentication server&quot;.</li>
+ <li>Passwords are stored as PBKDF2 hashes in <code>nmc.conf</code>.</li>
 </ul>
 
-<h4>نشست‌های فعال (Sessions)</h4>
-<p>فهرست نشست‌های باز (کاربر، IP، آخرین فعالیت) را نشان می‌دهد. Administrator می‌تواند هر نشست را با «Log off» خاتمه دهد — مثلاً وقتی دستگاهی گم شده.</p>
+<h4>Active Sessions</h4>
+<p>Lists open sessions (user, IP, last activity). Administrators can
+<b>Log off</b> any session — e.g. a lost device — killing it instantly.</p>
 
 <h4>Backup / Restore</h4>
 <ul>
- <li><b>Download Backup:</b> فایل <code>.bak</code> شامل تنظیمات فعلی <code>nmc.conf</code> را دانلود می‌کند (ادمین).</li>
- <li><b>Restore:</b> فایل پشتیبان را بازگردانی می‌کند. قبل از جایگزینی، از فایل فعلی خودکار نسخه پشتیبان تهیه می‌شود. رازها (پسوردها/توکن‌ها) در بکاپ هستند — فایل را امن نگه دارید.</li>
- <li>Restore فایل‌های نامعتبر یا خیلی بزرگ را رد می‌کند.</li>
+ <li><b>Download Backup:</b> saves the current <code>nmc.conf</code> as a
+  <code>.bak</code> file (admin only).</li>
+ <li><b>Restore:</b> uploads a backup and replaces the config. A backup of
+  the current file is taken automatically first. Invalid or oversized
+  uploads are rejected.</li>
+ <li>Backups contain secrets (password hashes, tokens) — store the file
+  safely.</li>
 </ul>
 
-<h4>توکن API</h4>
-<p>در کارت Update Settings صفحه About، توکن Bearer برای استفاده از REST API (<code>/api/v1/…</code>) نمایش داده می‌شود. دکمه «Copy» آن را به کلیپ‌بورد می‌برد. این توکن دسترسی کامل می‌دهد — فقط Administrator می‌بیند. با Generate توکن جدید بسازید و با Clear آن را غیرفعال کنید.</p>
+<h4>API Token</h4>
+<p>The Update Settings card on About shows the Bearer token used for the
+REST API (<code>/api/v1/…</code>). <b>Copy</b> copies it to the clipboard,
+<b>Generate</b> creates a new one (invalidating the old), <b>Clear</b>
+disables the API. Visible to Administrator only — it grants full access.</p>
 
-<h4>قفل حساب (Lockout)</h4>
-<p>چند تلاش ناموفق پیاپی برای ورود، IP را برای مدت کوتاه قفل می‌کند تا حمله brute-force کند شود. رویداد ورودهای ناموفق در Event Log ثبت می‌شود.</p>
+<h4>Login Lockout</h4>
+<p>Repeated failed logins temporarily lock the source IP to slow brute
+force; failures are written to the Event Log.</p>
 
-<h4>کوکی نشست</h4>
-<p>کوکی <code>nmc_session</code> با پرچم‌های HttpOnly + Secure + SameSite=Lax ساخته می‌شود و با CSRF token محافظت می‌شود — فرم‌ها بدون توکن معتبر پذیرفته نمی‌شوند.</p>
+<h4>Session Cookie</h4>
+<p>The <code>nmc_session</code> cookie is set with HttpOnly + Secure +
+SameSite=Lax, and every POST form carries a CSRF token — forged requests
+are rejected.</p>

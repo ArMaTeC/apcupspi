@@ -1,26 +1,38 @@
-<p>صفحه <b>Control › UPS Control</b> فرمان‌های کنترلی به UPS می‌فرستد. همه این فرمان‌ها از طریق NUT (<code>upsd</code>) به UPS واقعی می‌رسند.</p>
+<p><b>Control &rsaquo; UPS Control</b> sends real commands to the UPS via
+NUT (<code>upsd</code>).</p>
 
-<h4>فرمان‌های کنترلی</h4>
+<h4>Commands</h4>
 <table>
- <tr><th>فرمان</th><th>رفتار UPS</th></tr>
- <tr><td>Turn Off UPS</td><td>خاموش کردن خروجی؛ UPS منتظر می‌ماند برق برگردد و دوباره روشن می‌شود (<code>shutdown.return</code>)</td></tr>
- <tr><td>Turn Off and Stay Off</td><td>خاموش قطعی؛ تا وقتی دستی روشن نشود برمی‌نگردد (<code>shutdown.stayoff</code>)</td></tr>
- <tr><td>Reboot UPS</td><td>خاموش و روشن شدن مجدد خروجی (برای ریست مصرف‌کننده‌ها)</td></tr>
- <tr><td>Sleep</td><td>خاموشی با تأخیر مشخص؛ برای هماهنگی با خاموش شدن سرورها</td></tr>
- <tr><td>Start / Stop Beeper</td><td>روشن یا ساکت کردن زنگ هشدار UPS</td></tr>
- <tr><td>Instant Commands</td><td>هر فرمان خام NUT را می‌توان از اینجا ارسال کرد</td></tr>
+ <tr><th>Command</th><th>UPS behaviour</th></tr>
+ <tr><td>Reboot UPS</td><td>Cut and restore output — restarts attached equipment</td></tr>
+ <tr><td>Turn UPS On</td><td>Restore output power (<code>load.on</code>)</td></tr>
+ <tr><td>Turn UPS Off</td><td>Cut output; UPS waits for mains to return then restarts (<code>shutdown.return</code>)</td></tr>
+ <tr><td>Put UPS to Sleep</td><td>Power off after a delay; coordinates with server shutdown</td></tr>
+ <tr><td>Put UPS in Bypass</td><td>Feed the load directly from mains, bypassing the inverter</td></tr>
+ <tr><td>Mute / Alarm On / Alarm Off</td><td>Control the UPS beeper</td></tr>
 </table>
+<p>The two checkboxes modify the action:
+<b>Signal PowerChute Network Shutdown Clients</b> tells PCNS clients to
+shut their hosts down first, and <b>Skip outlet off delays</b> ignores the
+configured outlet shutdown delays.</p>
 
-<h4>قوانین امنیتی</h4>
+<h4>Safety Rules</h4>
 <ul>
- <li>فرمان‌های خاموش/ریبوت با پنجره تأیید همراه‌اند — قبل از اجرا متن فرمان دوباره نمایش داده می‌شود.</li>
- <li>این فرمان‌ها واقعاً خروجی UPS را قطع می‌کنند؛ قبل از اجرا مطمئن شوید مصرف‌کننده‌ها (سرورها) آماده‌اند.</li>
- <li>فقط نقش‌های <b>Administrator</b> و <b>Device</b> می‌توانند فرمان بفرستند؛ Read-Only صفحه را فقط می‌بیند.</li>
- <li>هر فرمان در Event Log با نام کاربر فرستنده ثبت می‌شود.</li>
+ <li>Power commands go through a confirmation page — the exact action is
+  shown again before it runs.</li>
+ <li>These commands really cut UPS output; make sure attached servers are
+  ready first.</li>
+ <li>Only <b>Administrator</b> and <b>Device</b> roles can send commands;
+  Read-Only sees the page without controls.</li>
+ <li>Every command is written to the Event Log with the sending user.</li>
 </ul>
 
-<h4>گروه‌های خروجی (Outlet Groups)</h4>
-<p>در UPSهای چندخروجی (چند outlet group)، صفحه <b>Control › Outlet Groups</b> هر گروه را جدا نشان می‌دهد و امکان خاموش/روشن کردن مستقل هر گروه و پیکربندی تأخیرهای خاموش/روشن شدن (delay) را می‌دهد. UPSهای تک‌خروجی فقط یک گروه اصلی دارند.</p>
+<h4>Outlet Groups</h4>
+<p>On multi-outlet UPS models, <b>Control &rsaquo; Outlet Groups</b> shows
+each group separately: switch a group on/off, cycle it, and configure its
+own shutdown / reboot / power-on delays. Single-outlet units show one
+master group.</p>
 
-<h4>تفاوت با خاموش کردن سیستم‌عامل</h4>
-<p>این صفحه به UPS فرمان می‌دهد نه به Raspberry Pi. خاموش کردن خود کارت (Pi) از ترمینال/SSH انجام می‌شود و در این رابط قرار ندارد.</p>
+<h4>UPS vs. This Card</h4>
+<p>These commands act on the <b>UPS</b>, not the Raspberry Pi. Rebooting the
+card itself is done from Wireless Hardware (WiFi Setup) or via SSH.</p>

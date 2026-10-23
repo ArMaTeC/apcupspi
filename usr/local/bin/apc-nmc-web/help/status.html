@@ -1,31 +1,43 @@
-<p>صفحه <b>Status › UPS Status</b> جزئیات کامل وضعیت UPS را از سرور NUT می‌خواند و هر چند ثانیه تازه می‌کند.</p>
+<p><b>Status &rsaquo; UPS Status</b> reads the full UPS state from the NUT
+server and refreshes it continuously.</p>
 
-<h4>بلوک وضعیت اصلی</h4>
+<h4>Main Status Block</h4>
 <table>
- <tr><th>فیلد</th><th>معنی</th></tr>
- <tr><td>Status</td><td>کد وضعیت NUT. مهم‌ترین‌ها: <code>OL</code> آنلاین، <code>OB</code> روی باتری، <code>LB</code> باتری کم، <code>RB</code> باتری نیاز به تعویض، <code>OVER</code> اضافه‌بار، <code>BYPASS</code> روی بای‌پس. فهرست کامل در <a href="/help/glossary">واژه‌نامه</a>.</td></tr>
- <tr><td>Input Voltage</td><td>ولتاژ ورودی برق شهر (ولت)</td></tr>
- <tr><td>Output Voltage</td><td>ولتاژ خروجی UPS به مصرف‌کننده‌ها</td></tr>
- <tr><td>Load</td><td>درصد بار نسبت به توان نامی UPS؛ بالای ~۸۰٪ هشدار است</td></tr>
- <tr><td>Battery Charge</td><td>درصد شارژ باتری</td></tr>
- <tr><td>Battery Runtime</td><td>برآورد UPS از زمان کارکرد با بار فعلی (دقیقه)</td></tr>
- <tr><td>Battery Voltage</td><td>ولتاژ لحظه‌ای باتری</td></tr>
- <tr><td>Temperature</td><td>دمای داخلی UPS در صورت گزارش</td></tr>
- <tr><td>Input Frequency</td><td>فرکانس برق شهر (هرتز)</td></tr>
+ <tr><th>Field</th><th>Meaning</th></tr>
+ <tr><td>Status</td><td>NUT status code. Key ones: <code>OL</code> online,
+  <code>OB</code> on battery, <code>LB</code> low battery, <code>RB</code>
+  replace battery, <code>OVER</code> overload, <code>BYPASS</code> on bypass.
+  Full list in the <a href="/help/glossary">Glossary</a>.</td></tr>
+ <tr><td>Input Voltage</td><td>Utility mains voltage (V)</td></tr>
+ <tr><td>Output Voltage</td><td>Voltage the UPS feeds to the load</td></tr>
+ <tr><td>Load</td><td>Percent of rated capacity; sustained ~80%+ is a warning sign</td></tr>
+ <tr><td>Battery Charge</td><td>Remaining charge percentage</td></tr>
+ <tr><td>Battery Runtime</td><td>UPS estimate of minutes remaining at current load</td></tr>
+ <tr><td>Battery Voltage</td><td>Live battery terminal voltage</td></tr>
+ <tr><td>Temperature</td><td>Internal UPS temperature, when reported</td></tr>
+ <tr><td>Input Frequency</td><td>Mains frequency (Hz)</td></tr>
 </table>
 
-<h4>اطلاعات باتری و دستگاه</h4>
+<h4>Battery and Device Info</h4>
 <ul>
- <li><b>Battery Install/Replace Date:</b> تاریخ نصب/تعویض باتری از روی UPS خوانده می‌شود. اگر باتری را عوض کردید با دکمه «Battery Replaced» تاریخ امروز ثبت می‌شود.</li>
- <li><b>Model / Serial / Firmware:</b> از <code>device.model</code>، <code>ups.serial</code> و <code>ups.firmware</code> خوانده می‌شود.</li>
- <li><b>Manufacture Date:</b> تاریخ تولید UPS در صورت گزارش.</li>
+ <li><b>Battery Install/Replace Date:</b> read from the UPS. After a
+  physical battery swap, press <b>Battery Replaced</b> so the age and the
+  <code>RB</code> alarm reset correctly.</li>
+ <li><b>Model / Serial / Firmware:</b> read from <code>device.model</code>,
+  <code>ups.serial</code> and <code>ups.firmware</code>.</li>
+ <li><b>Manufacture Date:</b> shown when the UPS reports it.</li>
 </ul>
 
-<h4>گذارها (Transfers)</h4>
-<p>تعداد و زمان آخرین گذار به باتری/بای‌پس ثبت می‌شود. افزایش ناگهانی گذارها معمولاً یعنی برق شهر ناپایدار است یا باتری مشکل دارد.</p>
+<h4>Transfers</h4>
+<p>Counts and timestamps of switches to battery/bypass. A sudden rise in
+transfers usually means unstable mains power or a weakening battery.</p>
 
-<h4>زنگ هشدار (Beeper)</h4>
-<p>وضعیت زنگ UPS نمایش داده و با دکمه‌های Enable/Disable/Mute کنترل می‌شود (نیاز به نقش مجاز). خاموش کردن زنگ، هشدارهای صوتی UPS را متوقف می‌کند ولی رویدادها همچنان ثبت می‌شوند.</p>
+<h4>Beeper</h4>
+<p>Shows the UPS beeper state with Enable/Disable/Mute buttons (requires a
+permitted role). Muting silences the audible alarm; events are still
+logged.</p>
 
-<h4>وقتی UPS قطع است</h4>
-<p>اگر ارتباط با <code>upsd</code> قطع شود، آخرین داده معتبر با برچسب «آخرین داده معتبر» نشان داده می‌شود و صفحه تلاش برای اتصال مجدد را ادامه می‌دهد. بخش <a href="/help/troubleshooting">عیب‌یابی</a> را ببینید.</p>
+<h4>When the UPS Is Offline</h4>
+<p>If the link to <code>upsd</code> drops, the page shows the last valid
+reading marked as stale and keeps retrying. See
+<a href="/help/troubleshooting">Troubleshooting</a>.</p>

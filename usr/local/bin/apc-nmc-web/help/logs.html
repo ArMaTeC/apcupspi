@@ -1,26 +1,39 @@
 <h4>Event Log</h4>
-<p>صفحه <b>Logs › Event Log</b> همه رویدادها را نشان می‌دهد: تغییر وضعیت برق، هشدارها، ورود/خروج کاربران، فرمان‌ها، خطاها و رویدادهای سرویس‌ها.</p>
+<p><b>Logs &rsaquo; Event Log</b> lists every event: power-state changes,
+alarms, logins, commands sent, errors and service events.</p>
 <ul>
- <li><b>Severity:</b> رنگ هر رویداد نشان‌دهنده سطح آن است — خاکستری=Info، نارنجی=Warning، قرمز=Critical.</li>
- <li><b>Filter:</b> فیلد جستجو بالای جدول روی متن رویداد فیلتر می‌کند.</li>
- <li><b>Clear Log:</b> (ادمین) کل تاریخچه را پاک می‌کند — این عمل بازگشت‌پذیر نیست.</li>
- <li><b>Download:</b> <a href="/events.txt">events.txt</a> متن کامل لاگ را برای آرشیو/تحلیل می‌دهد.</li>
+ <li><b>Severity:</b> colour-coded — grey Info, orange Warning, red
+  Critical. Use the severity checkboxes to hide levels.</li>
+ <li><b>Filter:</b> the text box filters rows instantly (client-side).</li>
+ <li><b>Clear Log:</b> (admin) wipes the history — not reversible.</li>
+ <li><b>Download:</b> <a href="/events.txt">events.txt</a> serves the raw
+  log for archiving or parsing.</li>
 </ul>
 
 <h4>Data Log</h4>
-<p>صفحه <b>Logs › Data Log</b> نمونه‌برداری دوره‌ای از پارامترهای UPS (ولتاژ، بار، شارژ، دما…) را ذخیره و رسم می‌کند.</p>
+<p><b>Logs &rsaquo; Data Log</b> samples UPS readings (voltage, load,
+charge, temperature, …) on a timer and charts them.</p>
 <ul>
- <li><b>نمودار:</b> با دکمه‌های <b>24h / 7d / All</b> بازه نمایش را تغییر دهید (پیش‌فرض ۲۴ ساعت).</li>
- <li><b>جدول:</b> ردیف‌ها با اسکرول تدریجی بارگذاری می‌شوند تا صفحه سریع بماند؛ با دکمه «Load more» صفحه بعدی می‌آید.</li>
- <li><b>خروجی:</b> <a href="/data.txt">data.txt</a> خام است؛ پارامتر <code>?csv=1</code> خروجی CSV می‌دهد و <code>?hours=N</code> بازه را محدود می‌کند.</li>
+ <li><b>Chart:</b> the <b>24 h / 7 days / All</b> buttons change the
+  displayed window (default 24 h).</li>
+ <li><b>Table:</b> rows lazy-load as you scroll (150 at a time) so the page
+  stays fast; the footnote shows &quot;x of y samples shown&quot;.</li>
+ <li><b>Export:</b> <a href="/data.txt">data.txt</a> is the raw log;
+  <code>?csv=1</code> gives CSV and <code>?hours=N</code> limits the
+  window.</li>
 </ul>
 
 <h4>Energy Stats</h4>
-<p>بخش Energy مصرف تقریبی (kWh) را از بار × زمان محاسبه می‌کند و در بازه‌های روزانه/ماهانه خلاصه می‌دهد — برای گزارش هزینه برق.</p>
+<p>Estimates consumption (kWh) from load over time — 24-hour and log-window
+totals, average power and optional cost if <code>energy_rate</code> is set
+in <code>nmc.conf</code>.</p>
 
-<h4>نگهداشت داده</h4>
+<h4>Storage &amp; Retention</h4>
 <ul>
- <li>لاگ‌ها در <code>/var/lib/apc-nmc/events.json</code> و <code>datalog.json</code> ذخیره می‌شوند.</li>
- <li>پارامترهای <code>[datalog] interval</code> (فاصله نمونه‌برداری) و <code>retention</code> (مدت نگهداری) در <code>nmc.conf</code> قابل تنظیم‌اند.</li>
- <li>همه رویدادهای مهم (فرمان‌ها، ورودها، خطاها) در اینجا ثبت می‌شوند — در عیب‌یابی اول اینجا را ببینید.</li>
+ <li>Logs live in <code>/var/lib/apc-nmc/events.json</code> and
+  <code>datalog.json</code>.</li>
+ <li><code>[datalog] interval</code> (sampling gap) and retention limits
+  are configurable in <code>nmc.conf</code>.</li>
+ <li>When troubleshooting, check the Event Log first — commands, logins
+  and delivery failures all land there.</li>
 </ul>

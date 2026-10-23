@@ -1,26 +1,39 @@
-<p>این سامانه، رابط مدیریتی «UPS Network Management PI» است؛ یک کارت مدیریت شبکه (NMC) که روی Raspberry Pi اجرا می‌شود و UPS متصل به سرور NUT را مانیتور و کنترل می‌کند. این راهنما نحوه استفاده از بخش‌های مختلف رابط را توضیح می‌دهد؛ نصب و راه‌اندازی اولیه در README مخزن گیت‌هاب مستند شده است.</p>
+<p>This is the <b>UPS Network Management PI</b> — a Network Management Card
+(NMC) running on a Raspberry Pi that monitors and controls a UPS through the
+NUT server. This guide explains how to use the interface; installation and
+first-time setup are covered in the GitHub README.</p>
 
-<h4>چیدمان صفحه</h4>
+<h4>Page Layout</h4>
 <ul>
- <li><b>نوار بالا (Topbar):</b> نشان برند، وضعیت زنده بودن داده (نقطه سبز کنار ساعت)، قرص وضعیت هشدار (کلیک روی آن به صفحه وضعیت UPS می‌رود)، ساعت سرور، دکمه تم روشن/تیره و نام کاربر جاری به همراه نقش او.</li>
- <li><b>بنر هشدار:</b> هنگامی که UPS روی باتری است (OB) یک بنر هشدار در بالای همه صفحه‌ها میزان شارژ و زمان باقی‌مانده را نمایش می‌دهد.</li>
- <li><b>بنر به‌روزرسانی:</b> اگر نسخه جدیدی از نرم‌افزار موجود باشد، نوار زردرنگی بالای صفحه نمایش داده می‌شود که با کلیک به صفحه به‌روزرسانی می‌رود.</li>
- <li><b>منوی کناری:</b> دسترسی به بخش‌های اصلی. زیرمنوهای هر بخش زیر همان عنوان باز می‌شوند. در موبایل، منو به‌صورت نوار بالای صفحه جمع می‌شود.</li>
- <li><b>مسیر صفحه (Breadcrumb):</b> بالای هر صفحه مسیر فعلی را نشان می‌دهد.</li>
+ <li><b>Top bar:</b> brand mark, live-data dot (green = receiving UPS data),
+  the alarm status pill (click it to jump to UPS Status), server clock,
+  light/dark theme button, and your user name with role.</li>
+ <li><b>On-battery banner:</b> while the UPS is on battery (OB), a warning
+  banner on every page shows charge and estimated minutes remaining.</li>
+ <li><b>Update banner:</b> when a new software release exists, a yellow bar
+  appears at the top; click it to open the update page.</li>
+ <li><b>Side menu:</b> the main sections. Sub-items expand below each
+  section. On mobile the menu collapses into a top bar.</li>
+ <li><b>Breadcrumb:</b> shows your current location at the top of each page.</li>
 </ul>
 
-<h4>نقش‌ها در یک نگاه</h4>
+<h4>Roles at a Glance</h4>
 <table>
- <tr><th>نقش</th><th>دسترسی خلاصه</th></tr>
- <tr><td>Administrator</td><td>دسترسی کامل به همه بخش‌ها</td></tr>
- <tr><td>Device Only</td><td>مدیریت UPS: وضعیت، کنترل، تست، تنظیمات UPS</td></tr>
- <tr><td>Network-Only</td><td>مدیریت شبکه/سرویس‌ها؛ بدون کنترل UPS</td></tr>
- <tr><td>Read-Only</td><td>فقط مشاهده؛ فقط می‌تواند رمز خودش را عوض کند</td></tr>
+ <tr><th>Role</th><th>Access summary</th></tr>
+ <tr><td>Administrator</td><td>Full access to everything</td></tr>
+ <tr><td>Device Only</td><td>UPS management: status, control, tests, UPS settings</td></tr>
+ <tr><td>Network-Only</td><td>Network/services management; no UPS control</td></tr>
+ <tr><td>Read-Only</td><td>View only; can only change its own password</td></tr>
 </table>
-<p>جزئیات کامل در <a href="/help/roles">نقش‌های کاربران</a>.</p>
+<p>Full detail in <a href="/help/roles">User Roles</a>.</p>
 
-<h4>داده‌های زنده</h4>
-<p>کاشی‌های داشبورد، قرص وضعیت در نوار بالا و جدول وضعیت هر چند ثانیه از <code>/status.json</code> به‌روزرسانی می‌شوند بدون اینکه صفحه رفرش شود. نقطه سبز کنار ساعت یعنی داده زنده دریافت می‌شود؛ اگر چراغ خاموش/قرمز شد ارتباط با UPS قطع است.</p>
+<h4>Live Data</h4>
+<p>Dashboard tiles, the top-bar pill and the status table refresh every few
+seconds from <code>/status.json</code> without reloading the page. The green
+dot beside the clock means data is live; if it goes dark the UPS link is
+down.</p>
 
-<h4>راهنمای بخش‌ها</h4>
-<p>از فهرست سمت چپ (در موبایل: بالای صفحه) موضوع موردنظر را انتخاب کنید. برای شروع پیشنهاد می‌شود <a href="/help/roles">نقش‌ها</a> و سپس <a href="/help/config-ups">پیکربندی UPS</a> را بخوانید.</p>
+<h4>Finding a Topic</h4>
+<p>Pick a topic from the list on the left (on mobile: above the article).
+Suggested starting points: <a href="/help/roles">Roles</a>, then
+<a href="/help/config-ups">Configuration: UPS</a>.</p>

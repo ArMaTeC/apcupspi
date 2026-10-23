@@ -1,31 +1,45 @@
-<p>صفحه <b>About › System</b> شناسنامه نرم‌افزار و ابزار به‌روزرسانی است.</p>
+<p><b>About &rsaquo; System</b> is the software identity card and update
+centre.</p>
 
-<h4>جدول اطلاعات</h4>
+<h4>Identity Table</h4>
 <ul>
- <li><b>Product:</b> UPS Network Management PI — نام محصول.</li>
- <li><b>Version:</b> نسخه نصب‌شده از <code>/etc/apc-nmc/version</code> خوانده می‌شود.</li>
- <li><b>App URL / User / Date:</b> آدرس دسترسی، کاربر جاری و زمان رندر صفحه.</li>
+ <li><b>Product:</b> UPS Network Management PI.</li>
+ <li><b>Version:</b> installed release, read from
+  <code>/etc/apc-nmc/version</code>.</li>
+ <li><b>App URL / User / Date:</b> access URL, your login and page render
+  time.</li>
 </ul>
 
-<h4>به‌روزرسانی نرم‌افزار (admin)</h4>
+<h4>Software Updates (admin)</h4>
 <ul>
- <li><b>Check for Updates:</b> از مخزن گیت‌هاب آخرین ریلیز را می‌خواند و در صورت وجود نسخه جدیدتر، بنر «Software update available» در همه صفحه‌ها ظاهر می‌شود.</li>
- <li><b>Apply Update:</b> دانلود + بررسی sha256 + نصب بسته. فرایند در کنسول زنده (Live Log) داخل همان صفحه دیده می‌شود.</li>
- <li><b>Rollback:</b> بازگرداندن بکاپ گرفته‌شده قبل از آخرین به‌روزرسانی.</li>
- <li>هنگام به‌روزرسانی، فایل‌های پیش‌فرض جدید با حفظ مقادیر فعلی به <code>nmc.conf</code> اضافه می‌شوند (merge پیش‌فرض‌ها).</li>
+ <li><b>Check for Updates:</b> queries the GitHub repository for the
+  newest release; if one exists a yellow banner appears on every page.</li>
+ <li><b>Apply Update:</b> downloads the payload, verifies sha256, deploys
+  files, rebuilds the UPS driver and restarts services — progress streams
+  into the live console on the page.</li>
+ <li><b>Rollback:</b> restores the per-file backup taken before the last
+  update.</li>
+ <li>Updates merge new default settings into <code>nmc.conf</code>
+  <b>without</b> overwriting your existing values.</li>
 </ul>
 
 <h4>Update Settings (admin)</h4>
 <table>
- <tr><th>فیلد</th><th>معنی</th></tr>
- <tr><td>Repo</td><td>مخزن گیت‌هاب برای چک ریلیز</td></tr>
- <tr><td>Branch / Channel</td><td>کانال به‌روزرسانی (main یا تگ‌های ریلیز)</td></tr>
- <tr><td>Verify Checksums</td><td>اجبار به تطابق sha256 بسته قبل از نصب</td></tr>
- <tr><td>Auto-check</td><td>چک خودکار دوره‌ای برای نسخه جدید</td></tr>
+ <tr><th>Field</th><th>Meaning</th></tr>
+ <tr><td>Repository</td><td>GitHub repo checked for releases (owner/name)</td></tr>
+ <tr><td>Branch</td><td>Branch used when the channel tracks a branch</td></tr>
+ <tr><td>Channel</td><td>Release stream — stable tags vs. branch builds</td></tr>
+ <tr><td>Verify</td><td>Require checksum/signature verification before installing</td></tr>
+ <tr><td>Daily auto-check</td><td>Check GitHub once a day and show the update banner</td></tr>
 </table>
 
 <h4>API Token (admin)</h4>
-<p>توکن Bearer برای REST API. «Copy» آن را کپی می‌کند، «Generate» توکن جدید می‌سازد (توکن قبلی باطل می‌شود) و «Clear» API را غیرفعال می‌کند. توکن را به کسی جز ادمین ندهید.</p>
+<p>Bearer token for the REST API. <b>Copy</b> puts it on the clipboard,
+<b>Generate</b> makes a new one (the old stops working), <b>Clear</b>
+disables API access. Treat it like a password — admin only.</p>
 
 <h4>Support Bundle</h4>
-<p>دکمه «Download Support Bundle» فایل <code>support.tgz</code> می‌سازد: نسخه، کانفیگ پاک‌سازی‌شده (بدون رمزها)، رویدادها، وضعیت سرویس‌ها و journal. برای گزارش باگ به توسعه‌دهنده ضمیمه کنید.</p>
+<p><b>Download Support Bundle</b> builds <code>support.tgz</code>:
+version, sanitized config (secrets stripped), events, service states,
+failed units, recent journals and network info — attach it to bug
+reports.</p>

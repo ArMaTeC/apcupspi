@@ -1,30 +1,38 @@
-<p>صفحه Home خلاصه‌ای زنده از وضعیت کل سامانه است و برای نگاه اول طراحی شده است.</p>
+<p>The Home page is a live summary of the whole system — designed to be
+your first glance.</p>
 
-<h4>کاشی‌های اطلاعاتی (Tiles)</h4>
+<h4>Tiles</h4>
 <table>
- <tr><th>کاشی</th><th>معنی</th></tr>
- <tr><td>وضعیت</td><td>وضعیت فعلی UPS (آنلاین / روی باتری / هشدار)</td></tr>
- <tr><td>شارژ باتری</td><td>درصد شارژ باقی‌مانده با نوار پیشرفت؛ زیر ۵۰٪ نارنجی و زیر ۲۰٪ قرمز می‌شود</td></tr>
- <tr><td>زمان باقی‌مانده</td><td>برآورد دقایق کارکرد با باتری با بار فعلی</td></tr>
- <tr><td>بار خروجی</td><td>درصد بار نامی UPS</td></tr>
- <tr><td>ولتاژ ورودی / خروجی</td><td>ولتاژ برق شهر و خروجی UPS</td></tr>
- <tr><td>دما</td><td>دمای داخلی UPS (در صورت گزارش توسط UPS)</td></tr>
+ <tr><th>Tile</th><th>Meaning</th></tr>
+ <tr><td>Battery Charge</td><td>Remaining capacity with a progress bar — orange below 50%, red below 20%</td></tr>
+ <tr><td>Runtime</td><td>Estimated minutes the UPS can run on battery at the current load</td></tr>
+ <tr><td>Load</td><td>Percent of the UPS rated capacity being drawn</td></tr>
+ <tr><td>Output</td><td>Real power (W) and apparent power (VA)</td></tr>
+ <tr><td>Input</td><td>Utility mains voltage and frequency</td></tr>
+ <tr><td>Output V</td><td>Voltage and frequency the UPS feeds to the load</td></tr>
+ <tr><td>Battery Temp</td><td>Internal UPS temperature, when the UPS reports it</td></tr>
 </table>
-<p>نشانگر <code>?</span> کنار برخی کاشی‌ها توضیح کوتاه همان مقدار را نشان می‌دهد. اگر UPS قطع باشد کاشی‌ها آخرین مقدار معتبر را با رنگ کم‌رنگ نمایش می‌دهند.</p>
+<p>Hovering a tile shows a short explanation. If the UPS is unreachable,
+tiles keep the last known values dimmed.</p>
 
-<h4>قرص وضعیت و بنر باتری</h4>
+<h4>Status Pill and On-Battery Banner</h4>
 <ul>
- <li><b>قرص وضعیت</b> (نوار بالا): «Normal» سبز، هشدارها نارنجی/قرمز. کلیک روی آن به <a href="/status/ups">UPS Status</a> می‌رود.</li>
- <li><b>بنر On Battery:</b> هنگام قطع برق، بنری بالای همه صفحه‌ها شارژ و زمان باقی‌مانده را نمایش می‌دهد.</li>
+ <li><b>Alarm pill</b> (top bar): green &quot;Normal&quot;, orange/red when
+  alarms are active. Click it to open <a href="/status/ups">UPS Status</a>.</li>
+ <li><b>On-battery banner:</b> during an outage a banner on every page shows
+  charge and minutes remaining.</li>
 </ul>
 
-<h4>کارت‌های پایین صفحه</h4>
+<h4>Cards Below the Tiles</h4>
 <ul>
- <li><b>State:</b> وضعیت فعلی با رنگ (سبز=عادی، نارنجی=هشدار، قرمز=بحرانی).</li>
- <li><b>Alarms:</b> فهرست هشدارهای فعال گزارش‌شده توسط UPS.</li>
- <li><b>آخرین تغییر وضعیت:</b> زمان آخرین گذار (مثلاً رفتن روی باتری).</li>
- <li><b>آخرین رویدادها:</b> شش رویداد اخیر با سطح اهمیت.</li>
+ <li><b>State:</b> current condition, colour-coded (green ok, orange
+  warning, red critical).</li>
+ <li><b>Alarms:</b> active alarm conditions reported by the UPS.</li>
+ <li><b>Last transfer:</b> when the UPS last switched to battery/bypass.</li>
+ <li><b>Recent events:</b> the six newest log entries with severity.</li>
 </ul>
 
-<h4>داده زنده</h4>
-<p>محتوای این صفحه هر ۵ ثانیه از <code>/status.json</code> تازه می‌شود. نقطه سبز کنار ساعت بالای صفحه یعنی داده‌ها به‌روز هستند؛ خاموش شدنش یعنی ارتباط با UPS قطع است.</p>
+<h4>Live Refresh</h4>
+<p>Content updates every 5 seconds from <code>/status.json</code>. The green
+dot by the clock means data is fresh; if it goes out, the UPS connection is
+down.</p>

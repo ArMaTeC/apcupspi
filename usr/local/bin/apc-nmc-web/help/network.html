@@ -1,21 +1,30 @@
-<h4>About › Network</h4>
-<p>وضعیت شبکه کارت را نشان می‌دهد:</p>
+<h4>About &rsaquo; Network</h4>
+<p>Shows the card's network state:</p>
 <ul>
- <li><b>Interface / IP / MAC:</b> آدرس‌های IPv4 هر اینترفیس (eth0، wlan0…) و آدرس فیزیکی.</li>
- <li><b>Gateway / DNS:</b> دروازه پیش‌فرض و سرورهای DNS فعلی.</li>
- <li><b>Hostname:</b> نام ماشین که در اعلان‌ها و SNMP sysName استفاده می‌شود.</li>
+ <li><b>Interface / IP / MAC:</b> IPv4 address and hardware address of each
+  interface (eth0, wlan0, …).</li>
+ <li><b>Gateway / DNS:</b> default gateway and configured DNS servers.</li>
+ <li><b>Hostname:</b> the machine name used in notifications and as SNMP
+  sysName.</li>
 </ul>
-<p>برای تغییر IP/Hostname از ابزار سیستم (<code>nmcli</code> یا NetworkManager) استفاده کنید؛ این صفحه فقط‌خواندنی است.</p>
+<p>Changing IP or hostname is done at OS level (<code>nmcli</code> /
+NetworkManager) — this page is read-only.</p>
 
-<h4>About › Host</h4>
-<p>سلامت خود Raspberry Pi را مانیتور می‌کند:</p>
+<h4>About &rsaquo; Host</h4>
+<p>Monitors the health of the Raspberry Pi itself:</p>
 <ul>
- <li><b>CPU Temp:</b> دمای SoC؛ بالای ~۸۰° باعث throttle و ریست‌های احتمالی می‌شود.</li>
- <li><b>Load / Memory / Disk:</b> بار سیستم، حافظه مصرفی و فضای آزاد کارت SD.</li>
- <li><b>Uptime:</b> مدت روشن بودن از آخرین ریست.</li>
- <li><b>Services:</b> وضعیت سرویس‌های اصلی (web, snmpd, modbus, dot1x, firewall, wifi-hw) — سبز=فعال.</li>
+ <li><b>CPU Temp:</b> SoC temperature — sustained ~80&nbsp;&deg;C means
+  thermal throttling.</li>
+ <li><b>Load / Memory / Disk:</b> system load, RAM use and free space on
+  the SD card.</li>
+ <li><b>Uptime:</b> time since the last reboot.</li>
+ <li><b>Services:</b> state of the key services (web, snmpd, modbus,
+  dot1x, firewall, wifi-hw) — green means active.</li>
 </ul>
 
-<h4>About › UPS Variables</h4>
-<p>دامپ خام همه متغیرهای گزارش‌شده توسط NUT (<code>ups.*</code>, <code>battery.*</code>, <code>input.*</code>, <code>output.*</code>, <code>device.*</code>…) برای دیباگ و پشتیبانی. ستون Description توضیح هر متغیر را می‌دهد.</p>
-<p>این جدول همان چیزی است که API و SNMP هم از آن استفاده می‌کنند؛ اگر متغیری اینجا نیست یعنی UPS آن را گزارش نمی‌کند.</p>
+<h4>About &rsaquo; UPS Variables</h4>
+<p>Raw dump of every variable the UPS reports through NUT
+(<code>ups.*</code>, <code>battery.*</code>, <code>input.*</code>,
+<code>output.*</code>, <code>device.*</code>, …) with descriptions —
+useful for debugging and support. If a variable isn't listed, the UPS
+doesn't report it; the API and SNMP agent read this same table.</p>

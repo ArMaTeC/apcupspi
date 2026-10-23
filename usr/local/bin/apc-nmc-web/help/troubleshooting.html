@@ -1,38 +1,54 @@
-<h4>UPS داده نمی‌دهد / «آخرین داده معتبر»</h4>
+<h4>No UPS data / &quot;last valid reading&quot; shown</h4>
 <ul>
- <li>سرویس NUT را چک کنید: <code>systemctl status nut-server</code> و <code>systemctl status apc-nmc-upsdrv</code>.</li>
- <li>کابل/پورت Modbus یا USB UPS را بررسی کنید؛ <code>upsc myups</code> باید متغیرها را برگرداند.</li>
- <li>اگر UPS جدید است، نام آن در <code>[ups] name</code> در <code>nmc.conf</code> باید با <code>ups.conf</code> یکی باشد.</li>
+ <li>Check the NUT services: <code>systemctl status nut-server</code> and
+  the UPS driver service.</li>
+ <li>Check the cable/Modbus link to the UPS; <code>upsc myups</code> on
+  the console should list variables.</li>
+ <li>If the UPS is new, make sure <code>[ups] name</code> in
+  <code>nmc.conf</code> matches the entry in <code>ups.conf</code>.</li>
 </ul>
 
-<h4>ریست‌های خودکار مکرر</h4>
-<p>واچ‌داگ شبکه (<code>net-watchdog</code>) وقتی دروازه و اینترنت هر دو ناپایدار باشند دستگاه را ریست می‌کند. اگر ریست‌های عجیب دارید Event Log را ببینید و اتصال شبکه را چک کنید — حداکثر ۳ ریست در هر قطعی پیوسته انجام می‌شود.</p>
+<h4>Repeated spontaneous reboots</h4>
+<p>The network watchdog (<code>net-watchdog</code>) reboots the device when
+both gateway and internet probes stay dead — up to 3 times per continuous
+outage. Check the Event Log and the physical network first.</p>
 
-<h4>به UI نمی‌رسم</h4>
+<h4>Can't reach the UI</h4>
 <ul>
- <li>اگر روی WiFi بودید و رادیو را غیرفعال کرده‌اید، از Ethernet وصل شوید و در System › WiFi Setup › Wireless Hardware دوباره Enable و Reboot کنید.</li>
- <li>پورت 443/80 را در فایروال چک کنید.</li>
- <li><code>systemctl status apc-nmc-web</code> و journal آن را ببینید.</li>
+ <li>If you disabled the WiFi radio you were using, connect over Ethernet
+  and re-enable it under System &rsaquo; WiFi Setup &rsaquo; Wireless
+  Hardware, then reboot.</li>
+ <li>Check ports 443/80 are allowed in the firewall settings.</li>
+ <li><code>systemctl status apc-nmc-web</code> and its journal show web
+  errors.</li>
 </ul>
 
-<h4>به‌روزرسانی ناموفق</h4>
+<h4>Update failed</h4>
 <ul>
- <li>در About › System کنسول زنده لاگ خطا را نشان می‌دهد؛ معمولاً مشکل شبکه/گیت‌هاب یا sha256 است.</li>
- <li>با «Rollback» به نسخه قبلی برگردید؛ بکاپ‌ها در <code>/var/backups/apc-nmc/</code> نگهداری می‌شوند.</li>
+ <li>The live console on About &rsaquo; System shows the failing step —
+  usually network/GitHub reachability or checksum mismatch.</li>
+ <li>Use <b>Rollback</b> to return to the previous release; backups live in
+  <code>/var/backups/apc-nmc/</code>.</li>
 </ul>
 
-<h4>اعلان‌ها نمی‌رسند</h4>
+<h4>Notifications not arriving</h4>
 <ul>
- <li>از دکمه Test هر کانال استفاده کنید؛ خطای دقیق در Event Log ثبت می‌شود.</li>
- <li>برای SMTP پورت/TLS و احراز هویت را چک کنید؛ برای webhook URL و کد پاسخ سرور را.</li>
- <li>سطح حداقل (Minimum Severity) را پایین‌تر بیاورید — شاید رویداد فیلتر شده باشد.</li>
+ <li>Use each channel's <b>Test</b> button — the exact failure lands in
+  the Event Log.</li>
+ <li>SMTP: check port/security mode and credentials. Webhook: check the
+  URL and the remote response.</li>
+ <li>Lower the Minimum Severity — the event may have been filtered out.</li>
 </ul>
 
-<h4>Modbus/MQTT کار نمی‌کند</h4>
+<h4>Modbus / MQTT not working</h4>
 <ul>
- <li>Modbus: سرویس را در System › Services فعال کنید و پورت را در فایروال باز کنید؛ Unit ID کلاینت را چک کنید.</li>
- <li>MQTT: با «Save &amp; Test» اتصال را آزمایش کنید؛ خطای اتصال/TLS/احراز در همان کارت و Event Log دیده می‌شود.</li>
+ <li>Modbus: enable the service and open its port in the firewall; check
+  the client's Unit ID matches.</li>
+ <li>MQTT: use <b>Save &amp; Test</b>; connect/TLS/auth errors show in the
+  card and the Event Log.</li>
 </ul>
 
-<h4>دیباگ بیشتر</h4>
-<p>از About › System دکمه «Download Support Bundle» یک فایل tar.gz با کانفیگ پاک‌سازی‌شده + journal + وضعیت سرویس‌ها می‌دهد — برای گزارش مشکل به توسعه‌دهنده ایده‌آل است.</p>
+<h4>Deeper debugging</h4>
+<p>On About &rsaquo; System, <b>Download Support Bundle</b> produces a
+tar.gz with sanitized config, service states and recent journals — ideal
+for a bug report.</p>

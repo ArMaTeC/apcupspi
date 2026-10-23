@@ -1,30 +1,41 @@
-<p>صفحه <b>Tests › Diagnostics</b> برای اجرای تست‌های UPS و زمان‌بندی آن‌هاست.</p>
+<p><b>Tests &rsaquo; Diagnostics</b> runs UPS tests and manages automatic
+schedules.</p>
 
-<h4>خودآزمایی (Self-Test)</h4>
+<h4>Self-Test</h4>
 <ul>
- <li><b>Start Self-Test:</b> UPS چند ثانیه روی باتری می‌رود و سلامت باتری را می‌سنجد. نتیجه در وضعیت (<code>ups.test.result</code>) و Event Log ثبت می‌شود.</li>
- <li>حین اجرای تست وضعیت ممکن است موقتاً <code>OB CAL</code> یا <code>TEST</code> نشان دهد.</li>
- <li>اگر تست ناموفق باشد معمولاً باتری باید تعویض شود (<code>RB</code>).</li>
+ <li><b>Initiate UPS Self Test:</b> the UPS briefly runs on battery to check
+  battery health. The result appears in <code>ups.test.result</code> and the
+  Event Log.</li>
+ <li>Status may briefly show <code>TEST</code> or <code>CAL</code> while it
+  runs.</li>
+ <li>A failed test usually means the battery needs replacing
+  (<code>RB</code>).</li>
 </ul>
 
-<h4>کالیبراسیون زمان کارکرد (Runtime Calibration)</h4>
+<h4>Runtime Calibration</h4>
 <ul>
- <li>UPS تا آستانه باتری کم روی باتری می‌ماند تا تخمین «Runtime» دقیق شود.</li>
- <li><b>هشدار:</b> کالیبراسیون باتری را عمیقاً تخلیه می‌کند و بار را برای مدتی روی باتری می‌گذارد. فقط وقتی اجرا کنید که ریسک قطعی قابل‌قبول باشد.</li>
- <li><b>Stop Calibration</b> فرایند را متوقف می‌کند.</li>
+ <li>The UPS discharges the battery down to the low-battery threshold so its
+  runtime estimate becomes accurate.</li>
+ <li><b>Warning:</b> calibration deeply discharges the battery and keeps the
+  load on battery for a while — only run it when an outage risk is
+  acceptable. The page shows the prerequisites (battery ~100%, steady load
+  ~30%) and the UPS silently ignores the command until they are met.</li>
+ <li><b>Stop Calibration</b> aborts a running calibration.</li>
 </ul>
 
-<h4>کارت زمان‌بندی (Scheduling)</h4>
+<h4>Scheduling Card</h4>
 <table>
- <tr><th>فیلد</th><th>معنی</th></tr>
- <tr><td>Self-Test Day / Hour</td><td>روز و ساعت اجرای خودکار خودآزمایی هفتگی. خالی یعنی غیرفعال.</td></tr>
- <tr><td>Shutdown Day / Hour</td><td>روز و ساعت خاموش شدن برنامه‌ریزی‌شده UPS (یک بار در هفته در آن بازه)</td></tr>
- <tr><td>Shutdown Mode</td><td><b>Return when power is restored</b>: با برگشت برق روشن می‌شود. <b>Stay off</b>: خاموش می‌ماند تا دستی روشن شود.</td></tr>
+ <tr><th>Field</th><th>Meaning</th></tr>
+ <tr><td>Weekly Self-Test</td><td>Day and hour for an automatic weekly self-test. Empty day = disabled.</td></tr>
+ <tr><td>When</td><td>Day and hour for a scheduled UPS power-off (once per week)</td></tr>
+ <tr><td>After Power-Off</td><td><b>Return when power is restored</b> vs. <b>Stay off</b> until manually restarted</td></tr>
 </table>
-<p>زمان‌بندی‌ها در ساعت محلی سرور اجرا می‌شوند و هر اجرا در Event Log ثبت می‌شود. غیرفعال کردن با خالی کردن روز هفته انجام می‌شود.</p>
+<p>Schedules run in server local time; every execution is recorded in the
+Event Log. Clear the day to disable a schedule.</p>
 
-<h4>نکات</h4>
+<h4>Notes</h4>
 <ul>
- <li>اجرای تست‌ها نیاز به نقش Administrator یا Device دارد.</li>
- <li>نتایج آخرین تست در صفحه <a href="/status/ups">UPS Status</a> هم دیده می‌شود.</li>
+ <li>Running tests requires the Administrator or Device role.</li>
+ <li>The latest test result also appears on
+  <a href="/status/ups">UPS Status</a>.</li>
 </ul>

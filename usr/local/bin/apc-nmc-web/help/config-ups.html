@@ -1,31 +1,41 @@
-<p>صفحه <b>Configuration › UPS</b> تنظیمات عملکرد UPS را مدیریت می‌کند. تغییرات در فایل <code>nmc.conf</code> ذخیره و بلافاصله اعمال می‌شوند. دسترسی ویرایش: Administrator و Device.</p>
+<p><b>Configuration &rsaquo; UPS</b> manages UPS behaviour settings. Changes
+are stored in <code>nmc.conf</code> and applied immediately. Editable by
+Administrator and Device roles.</p>
 
-<h4>هویت دستگاه</h4>
+<h4>Identity</h4>
 <table>
- <tr><th>فیلد</th><th>کاربرد</th></tr>
- <tr><td>UPS Name</td><td>نام منطقی UPS در NUT (پیش‌فرض <code>myups</code>)؛ با نام تعریف‌شده در <code>ups.conf</code> یکی باشد</td></tr>
- <tr><td>Location</td><td>محل نصب؛ در داشبورد و اعلان‌ها نمایش داده می‌شود</td></tr>
- <tr><td>Contact</td><td>نام/ایمیل مسئول؛ در اعلان‌ها استفاده می‌شود</td></tr>
+ <tr><th>Field</th><th>Purpose</th></tr>
+ <tr><td>UPS Name</td><td>Logical UPS name in NUT (default <code>myups</code>) — must match <code>ups.conf</code></td></tr>
+ <tr><td>UPS Identifier</td><td>Reported to clients as <code>ups.id</code></td></tr>
+ <tr><td>Location</td><td>Shown on the dashboard and in notifications</td></tr>
+ <tr><td>Contact</td><td>Responsible person; included in notifications</td></tr>
+ <tr><td>Audible Alarm</td><td>Enable/disable the UPS beeper</td></tr>
 </table>
 
-<h4>پارامترهای عملکرد</h4>
+<h4>Behaviour Parameters</h4>
 <table>
- <tr><th>فیلد</th><th>کاربرد</th></tr>
- <tr><td>Low Battery Runtime (min)</td><td>آستانه «باتری کم»: وقتی Runtime باقی‌مانده کمتر از این شود وضعیت <code>LB</code> اعلام و رویداد ثبت می‌شود</td></tr>
- <tr><td>Shutdown Delay (s)</td><td>تأخیر بین فرمان خاموش و قطع واقعی خروجی — فرصت خاموش شدن امن سرورها</td></tr>
- <tr><td>Min. Return Capacity (%)</td><td>حداقل شارژ لازم بعد از برگشت برق تا UPS دوباره خروجی بدهد؛ جلوی نوسان روشن/خاموش را می‌گیرد</td></tr>
- <tr><td>Sensitivity</td><td>حساسیت UPS به نوسان ولتاژ (Low/Medium/High)؛ حساسیت بالا = گذار بیشتر به باتری</td></tr>
- <tr><td>Transfer Voltage Low/High</td><td>بازه ولتاژ ورودی مجاز؛ خارج شدن از بازه باعث گذار به باتری می‌شود</td></tr>
+ <tr><th>Field</th><th>Purpose</th></tr>
+ <tr><td>Sensitivity</td><td>How readily the UPS transfers to battery on voltage fluctuation — higher means more transfers</td></tr>
+ <tr><td>Rated Output Voltage</td><td>Nominal output voltage the UPS regulates to</td></tr>
+ <tr><td>Low Battery Runtime (s)</td><td>When remaining runtime drops below this, <code>LB</code> is raised</td></tr>
+ <tr><td>Low Battery Charge (%)</td><td>Charge level that triggers the low-battery warning</td></tr>
+ <tr><td>Shutdown Delay (s)</td><td>Grace period between the shutdown command and the actual output cut — lets servers power off cleanly</td></tr>
+ <tr><td>Restart Delay (s)</td><td>Wait before output returns after mains is restored</td></tr>
+ <tr><td>Reboot Delay (s)</td><td>How long output stays off during a reboot cycle</td></tr>
+ <tr><td>Transfer Voltage Low/High</td><td>Input voltage window; leaving it switches the UPS to battery</td></tr>
 </table>
 
-<h4>باتری</h4>
+<h4>Battery</h4>
 <ul>
- <li><b>Battery Replaced:</b> بعد از تعویض فیزیکی باتری این دکمه تاریخ امروز را ثبت می‌کند تا سن باتری و هشدار <code>RB</code> درست محاسبه شود.</li>
+ <li><b>Battery Replaced:</b> after a physical swap, press this to record
+  today's date so battery age and the <code>RB</code> warning stay
+  accurate.</li>
 </ul>
 
-<h4>نکات کاربردی</h4>
+<h4>Practical Notes</h4>
 <ul>
- <li>نشانگر <span class="tip">?</span> کنار هر فیلد توضیح همان فیلد را می‌دهد.</li>
- <li>دکمه «Cancel» فرم را به مقادیر ذخیره‌شده برمی‌گرداند.</li>
- <li>اگر فرم را تغییر داده و بدون ذخیره از صفحه خارج شوید، مرورگر هشدار «تغییرات ذخیره‌نشده» می‌دهد.</li>
+ <li>The <span class="tip">?</span> badge beside each field explains it.</li>
+ <li><b>Cancel</b> restores the saved values.</li>
+ <li>Leaving a page with unsaved form changes triggers the browser's
+  unsaved-changes warning.</li>
 </ul>

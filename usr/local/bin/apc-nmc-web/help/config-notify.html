@@ -1,27 +1,37 @@
-<p>کارت <b>Notifications</b> در صفحه Configuration مشخص می‌کند رویدادهای UPS از چه کانال‌هایی اطلاع‌رسانی شوند. همه کانال‌ها به‌صورت هم‌زمان فعال‌اند و هر کدام دکمه تست جدا دارد.</p>
+<p>The <b>Notifications</b> card on the Configuration page controls which
+channels fire when UPS events occur. All enabled channels work in parallel
+and each has its own test button.</p>
 
-<h4>حداقل سطح اهمیت (Minimum Severity)</h4>
-<p>فقط رویدادهایی که سطحشان برابر یا بالاتر از این مقدار باشد اطلاع‌رسانی می‌شوند؛ بقیه فقط در Event Log ثبت می‌شوند. گزینه‌ها: Info، Warning، Critical.</p>
+<h4>Minimum Severity</h4>
+<p>Only events at or above this level are sent out; lower ones are only
+written to the Event Log. Choices: Info, Warning, Critical.</p>
 
-<h4>کانال‌ها</h4>
+<h4>Channels</h4>
 <table>
- <tr><th>کانال</th><th>تنظیمات کلیدی</th><th>توضیح</th></tr>
- <tr><td>SNMP Traps</td><td>Manager IP, Community, Port, Version (v1/v2c/v3)</td><td>ترپ‌های APC PowerNet به NMS شما (Zabbix, PRTG, …) ارسال می‌شود؛ در فایروال پورت UDP 162 را باز کنید</td></tr>
- <tr><td>Syslog</td><td>Server, Port, Protocol (UDP/TCP/TLS)</td><td>ارسال رویدادها به syslog سرور؛ حالت TLS نیاز به گواهی معتبر سرور دارد</td></tr>
- <tr><td>Webhook</td><td>URL, Header/Secret</td><td>POST کردن رویداد به‌صورت JSON به هر سرویس دلخواه (سفارشی‌ترین کانال)</td></tr>
- <tr><td>Discord</td><td>Webhook URL, Mention</td><td>ارسال پیام به کانال دیسکورد؛ Mention برای منشن نقش/کاربر</td></tr>
- <tr><td>Teams</td><td>Webhook URL</td><td>ارسال کارت Adaptive به کانال مایکروسافت تیمز</td></tr>
- <tr><td>Email (SMTP)</td><td>Host, Port, TLS, User, Password, From, To (چند گیرنده با ; جدا شود)</td><td>ارسال ایمیل رویداد؛ از Gmail و ریله‌های داخلی پشتیبانی می‌کند</td></tr>
+ <tr><th>Channel</th><th>Key settings</th><th>Notes</th></tr>
+ <tr><td>SNMP Traps</td><td>Manager IP, community, port, version (v1/v2c/v3)</td><td>APC PowerNet traps to your NMS (Zabbix, PRTG, …); allow UDP 162 in the firewall</td></tr>
+ <tr><td>Syslog</td><td>Target — <code>local</code>, <code>host[:514]</code>, <code>tcp://</code> or <code>tls://</code></td><td>TLS mode needs a valid server certificate; &quot;skip verification&quot; is for testing only</td></tr>
+ <tr><td>Webhook</td><td>URL</td><td>POSTs the event as JSON to any service — the most flexible channel</td></tr>
+ <tr><td>Discord</td><td>Webhook URL, mention</td><td>Posts to a Discord channel; the mention (e.g. <code>@here</code>) is sent only with critical alerts</td></tr>
+ <tr><td>Teams</td><td>Webhook URL</td><td>Sends an adaptive card to a Teams channel (Office 365 Incoming Webhook connector)</td></tr>
+ <tr><td>Email (SMTP)</td><td>Host, port, security, user, password, from, to (comma-separated)</td><td>Works with Gmail, O365 and internal relays; blank port auto-picks 465/587/25</td></tr>
 </table>
 
-<h4>ماتریس مسیردهی رویدادها</h4>
-<p>در جدول انتهای کارت برای هر دسته رویداد (پاور، باتری، ارتباط، سامانه) می‌توانید مشخص کنید کدام کانال‌ها فعال باشند. اگر ماتریس خالی باشد همه رویدادهای بالاتر از آستانه به همه کانال‌های فعال می‌روند.</p>
+<h4>Alert Routing Matrix</h4>
+<p>The table at the bottom maps each trigger type (power, battery,
+communication, system) to the channels that should fire for it. A fully
+unchecked row alerts nowhere for that trigger.</p>
 
-<h4>تست</h4>
-<p>دکمه «Test» هر کانال یک رویداد آزمایشی می‌فرستد تا قبل از ذخیره مطمئن شوید تنظیمات درست است. خطاهای ارسال در Event Log با سطح Warning ثبت می‌شوند.</p>
+<h4>Testing</h4>
+<p>Each channel's <b>Test</b> button sends a sample event using the
+<b>saved</b> configuration — Apply changes first. Delivery failures are
+written to the Event Log as warnings.</p>
 
-<h4>نکات</h4>
+<h4>Notes</h4>
 <ul>
- <li>رمز SMTP و Community/Secretها در <code>nmc.conf</code> ذخیره می‌شوند — فایل را محرمانه نگه دارید و فایروال را برای دسترسی به کارت فعال کنید.</li>
- <li>برای TLS حتماً ساعت دستگاه را درست نگه دارید (NTP) وگرنه اعتبارسنجی گواهی شکست می‌خورد.</li>
+ <li>SMTP password and webhook URLs are secrets — the form shows a
+  &quot;configured&quot; flag; leave a field blank to keep the stored
+  value.</li>
+ <li>For TLS channels keep the clock correct (NTP) or certificate
+  validation fails.</li>
 </ul>
