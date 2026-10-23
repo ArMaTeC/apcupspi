@@ -4791,7 +4791,9 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, json.dumps(cmds), "application/json")
         d["__csrf"] = sess["csrf"]
         d["__role"] = role
-        d["__uinfo"] = "%s &middot; %s" % (
+        # plain text — the page template esc()es this, so an HTML
+        # entity here would render literally (bug: "&middot;" shown)
+        d["__uinfo"] = "%s · %s" % (
             sess.get("user") or WEB_USER, role)
         section = leaf = ""
         try:
@@ -4975,7 +4977,7 @@ class H(BaseHTTPRequestHandler):
         d = self._d()
         d["__csrf"] = sess["csrf"]
         d["__role"] = role
-        d["__uinfo"] = "%s &middot; %s" % (
+        d["__uinfo"] = "%s · %s" % (
             sess.get("user") or WEB_USER, role)
         if p == "/control/ups":
             act = f.get("act", [""])[0]
