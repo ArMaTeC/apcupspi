@@ -657,7 +657,8 @@ def test_code_split_parts():
     for name in web._PARTS:
         p = os.path.join(web.ASSET_DIR, name)
         assert os.path.isfile(p), name
-        compile(open(p).read(), p, "exec")          # syntax check
+        with open(p, encoding="utf-8") as f:
+            compile(f.read(), p, "exec")            # syntax check
     for fn in ("pg_home", "pg_status", "pg_control", "pg_outlets",
                "pg_tests", "pg_config", "pg_users", "pg_system",
                "pg_events", "pg_data", "pg_about", "pg_network",
