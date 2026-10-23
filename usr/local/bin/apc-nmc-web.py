@@ -635,7 +635,8 @@ ROLE_GETS = {
     "readonly": None,                        # view everything
 }
 ROLE_POSTS = {
-    "device": ("/control/", "/test/diag", "/status/battery",
+    "device": ("/control/", "/test/diag", "/test/schedule",
+               "/status/battery",
                "/config/ups", "/config/outlets", "/config/security"),
     "network": ("/config/notify", "/config/services",
                 "/config/firewall", "/config/dot1x", "/config/wifi",
@@ -1294,6 +1295,120 @@ def fire_trap(num, flags=""):
             pass
 
 
+# ---- MQTT telemetry ([mqtt]) ------------------------------------------
+# Minimal MQTT 3.1.1 QoS-0 publisher in stdlib — paho isn't guaranteed
+# installed on the appliance and CONNECT+PUBLISH is a small wire format.
+
+def _vbi(n):
+    """MQTT remaining-length variable byte integer."""
+    out = bytearray()
+    while True:
+        b = n % 128
+        n //= 128
+        out.append(b | 0x80 if n else b)
+        if not n:
+            return bytes(out)
+
+
+def _mqs(s):
+    """MQTT length-prefixed UTF-8 string."""
+    b = s.encode("utf-8")
+    return len(b).to_bytes(2, "big") + b
+
+
+def mqtt_publish(host, port, topic, payload, client_id="apc-nmc",
+                 user="", pw="", tls=False, insecure=False, timeout=8):
+    """One-shot CONNECT + PUBLISH (QoS 0) + disconnect.
+    -> (True, "") on success, (False, error) otherwise."""
+    flags = 0x02                                # clean session
+    if user:
+        flags |= 0x80 | (0x40 if pw else 0)
+    vh = (b"\x00\x04MQTT\x04" + bytes([flags])
+          + (60).to_bytes(2, "big"))
+    pl = _mqs(client_id)
+    if user:
+        pl += _mqs(user)
+    if pw:
+        pl += _mqs(pw)
+    conn = b"\x10" + _vbi(len(vh) + len(pl)) + vh + pl
+    body = _mqs(topic) + payload.encode("utf-8", "replace")
+    pub = b"\x30" + _vbi(len(body)) + body
+    try:
+        s = socket.create_connection((host, port), timeout)
+        if tls:
+            ctx = ssl.create_default_context()
+            if insecure:
+                ctx.check_hostname = False
+                ctx.verify_mode = ssl.CERT_NONE
+            s = ctx.wrap_socket(s, server_hostname=host)
+        with s:
+            s.sendall(conn)
+            resp = s.recv(4)
+            if len(resp) < 4 or resp[0] != 0x20 or resp[3] != 0:
+                return (False, "broker refused connect (rc=%s)"
+                        % (resp[3] if len(resp) > 3 else "?"))
+            s.sendall(pub)
+        return True, ""
+    except Exception as e:
+        return False, str(e)
+
+
+_MQTT_VARS = ("ups.status", "battery.charge", "battery.runtime",
+              "battery.voltage", "battery.temperature", "ups.load",
+              "ups.realpower", "ups.power", "input.voltage",
+              "input.frequency", "output.voltage", "output.frequency")
+_mqtt_state = {"ok": None, "err": "", "at": 0, "n": 0}
+
+
+def mqtt_cfg():
+    on = lambda v: str(v).lower() in ("1", "yes", "true", "on")
+    return {"enabled": on(cfg("mqtt", "enabled", "0")),
+            "host": cfg("mqtt", "host", ""),
+            "port": cfg("mqtt", "port", "1883"),
+            "tls": on(cfg("mqtt", "tls", "0")),
+            "insecure": on(cfg("mqtt", "tls_insecure", "0")),
+            "user": cfg("mqtt", "user", ""),
+            "pass": cfg("mqtt", "password", ""),
+            "topic": (cfg("mqtt", "topic", "apc-nmc/myups").strip("/")
+                      or "apc-nmc/myups"),
+            "interval": cfg("mqtt", "interval", "60")}
+
+
+def mqtt_send(payload):
+    m = mqtt_cfg()
+    try:
+        port = int(m["port"] or 1883)
+    except ValueError:
+        return False, "invalid port"
+    return mqtt_publish(m["host"], port, m["topic"] + "/state", payload,
+                        user=m["user"], pw=m["pass"], tls=m["tls"],
+                        insecure=m["insecure"])
+
+
+def mqtt_publisher():
+    """Publish key UPS vars as JSON to <topic>/state every interval
+    seconds while enabled; last result is shown on the services card."""
+    while True:
+        try:
+            iv = max(15, int(mqtt_cfg()["interval"] or 60))
+        except (ValueError, TypeError):
+            iv = 60
+        try:
+            m = mqtt_cfg()
+            if m["enabled"] and m["host"]:
+                d = ups_vars()
+                pl = json.dumps({"ts": int(time.time()), **{
+                    k: d[k] for k in _MQTT_VARS if k in d}})
+                ok, err = mqtt_send(pl)
+                _mqtt_state.update(ok=ok, err=err,
+                                   n=_mqtt_state["n"] + 1,
+                                   at=int(time.time()) if ok
+                                   else _mqtt_state["at"])
+        except Exception:
+            pass
+        time.sleep(iv)
+
+
 STATUS_EVENTS = {
     "OB": ("UPS: On battery power in response to an input power problem.",
            "UPS: No longer on battery power."),
@@ -1358,6 +1473,30 @@ def _maybe_scheduled_selftest(ok):
         ups_cmd("test.battery.start")
 
 
+def _maybe_scheduled_shutdown(ok):
+    """Calendar UPS power-off ([schedule] shutdown_weekday/hour/mode).
+    Fires shutdown.return (power back when utility returns) or
+    shutdown.stayoff at most once per matching day."""
+    wd, hr = (cfg("schedule", "shutdown_weekday", "").strip(),
+              cfg("schedule", "shutdown_hour", "").strip())
+    if not wd or not hr or not ok:
+        return
+    try:
+        wd_i, hr_i = int(wd), int(hr)
+    except ValueError:
+        return
+    t = time.localtime()
+    today = time.strftime("%Y-%m-%d")
+    if t.tm_wday == wd_i and t.tm_hour == hr_i and \
+            cfg_get("shutdown_sched_last", "") != today:
+        cfg_set("shutdown_sched_last", today)
+        mode = cfg("schedule", "shutdown_mode", "return").strip()
+        cmd = ("shutdown.stayoff" if mode == "stayoff"
+               else "shutdown.return")
+        log_event("UPS: Scheduled shutdown started (%s)." % cmd, "warn")
+        ups_cmd(cmd)
+
+
 def _auto_unmute_beeper(d, ok):
     """Re-arm the beeper after a card-tracked mute once the UPS leaves
     the alarm state, so the next alarm is audible again."""
@@ -1403,6 +1542,7 @@ def status_poller():
             _run_hook("COMM", "off")
         comm_ok = ok
         _maybe_scheduled_selftest(ok)
+        _maybe_scheduled_shutdown(ok)
         if ok and not batt_age_checked:
             batt_age_checked = True
             age = battery_age_years()
@@ -1835,6 +1975,8 @@ def page(title, body, d, path="", section="", leaf=""):
   <a href="/logoff">Log Off</a>
  </div>
 </div>
+<div id="obbanner" class="obbanner" hidden>&#9888; UPS ON BATTERY
+<span id="obb"></span></div>
 %s
 <div class="shell">
 <nav class="side">%s</nav>
@@ -2394,6 +2536,47 @@ def pg_tests(d, msg: "str | tuple" = ""):
                     'access &mdash; test actions require the device '
                     'role.</p>')
         calforms = ""
+    sched = ""
+    if role_post_ok(d.get("__role", "admin"), "/test/schedule"):
+        wdays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+
+        def wdsel(name, cur):
+            return ('<select name="%s"><option value="">disabled'
+                    '</option>%s</select>' % (name, "".join(
+                        '<option value="%d"%s>%s</option>' % (
+                            i, " selected" if str(i) == cur else "",
+                            wdays[i]) for i in range(7))))
+
+        def hrsel(name, cur):
+            return ('<select name="%s"><option value="">&mdash;</option>'
+                    '%s</select>' % (name, "".join(
+                        '<option value="%d"%s>%02d:00</option>' % (
+                            i, " selected" if str(i) == cur else "", i)
+                        for i in range(24))))
+
+        smode = cfg("schedule", "shutdown_mode", "return")
+        sched = """<div class="card"><h3>Scheduling</h3><div class="pad">
+<form method="post" action="/test/schedule"><table class="kv">
+<tr><td class="lbl">Weekly Self-Test</td><td>%s at %s</td></tr>
+</table><h4 style="margin:18px 0 8px">Scheduled UPS Power-Off</h4>
+<table class="kv">
+<tr><td class="lbl">When</td><td>%s at %s</td></tr>
+<tr><td class="lbl">After Power-Off</td><td><select name="sd_mode">%s</select></td></tr>
+</table><p class="note" style="margin-top:8px">Fires once per matching
+day. "Return when power is restored" sends shutdown.return; "stay off"
+sends shutdown.stayoff &mdash; the UPS then needs a manual restart.</p>
+<div style="margin-top:12px">%s
+<button class="btn">Save Schedules</button></div></form></div></div>""" % (
+            wdsel("st_wd", cfg("schedule", "selftest_weekday", "")),
+            hrsel("st_hr", cfg("schedule", "selftest_hour", "")),
+            wdsel("sd_wd", cfg("schedule", "shutdown_weekday", "")),
+            hrsel("sd_hr", cfg("schedule", "shutdown_hour", "")),
+            "".join('<option value="%s"%s>%s</option>' % (
+                v, " selected" if v == smode else "", lbl)
+                for v, lbl in (("return",
+                                "return when power is restored"),
+                               ("stayoff", "stay off"))),
+            csrf_input(d))
     return """<h1 class="page">Diagnostics</h1>
 <div id="pagebody">%s
 <div class="card"><h3>UPS Self Test</h3><div class="pad"><table class="kv">
@@ -2402,7 +2585,7 @@ def pg_tests(d, msg: "str | tuple" = ""):
 <div class="card"><h3>Runtime Calibration</h3><div class="pad"><table class="kv">
 %s%s</table>%s
 %s</div></div>
-</div>
+%s</div>
 <script>var NMC_INIT={status:%s};</script><script>%s</script>""" % (
         m,
         kv("Last Test Result", esc(test_result_str(result))),
@@ -2413,6 +2596,7 @@ def pg_tests(d, msg: "str | tuple" = ""):
         kv("Calibration Status", "Running" if cal else "Not running"),
         req,
         calforms,
+        sched,
         json.dumps(d.get("ups.status", "")), _asset("tests.js"))
 
 
@@ -2802,6 +2986,24 @@ Status: <b>%s / %s</b>%s</p>
 %s<input type="hidden" name="svc" value="ftp"><table class="kv">
 <tr><td class="lbl">Enabled</td><td><input type="checkbox" name="ftp_en"%s></td></tr>
 </table><div style="margin-top:12px"><button class="btn">Apply</button></div>
+</form>
+<h4 style="margin:22px 0 8px">MQTT Telemetry</h4>
+<p class="mut" style="margin-top:0">Publishes the key UPS readings as a
+JSON document to <code>%s/state</code> every interval &mdash; for
+Home Assistant, Node-RED and similar consumers.%s</p>
+<form method="post" action="/config/services">
+%s<input type="hidden" name="svc" value="mqtt"><table class="kv">
+<tr><td class="lbl">Enabled</td><td><input type="checkbox" name="mq_en"%s></td></tr>
+<tr><td class="lbl">Broker Host</td><td><input name="mq_host" maxlength="128" value="%s" placeholder="mqtt.local"></td></tr>
+<tr><td class="lbl">Port</td><td><input name="mq_port" type="number" min="1" max="65535" value="%s"></td></tr>
+<tr><td class="lbl">TLS</td><td><label class="f" style="font-weight:normal"><input type="checkbox" name="mq_tls"%s> use TLS (port 8883)</label>
+ <label class="f" style="font-weight:normal"><input type="checkbox" name="mq_insecure"%s> skip certificate verification</label></td></tr>
+<tr><td class="lbl">Username</td><td><input name="mq_user" maxlength="64" value="%s"></td></tr>
+<tr><td class="lbl">Password</td><td><input name="mq_pass" type="password" maxlength="128" value="" placeholder="unchanged" autocomplete="off"></td></tr>
+<tr><td class="lbl">Topic Prefix</td><td><input name="mq_topic" maxlength="96" value="%s" placeholder="apc-nmc/myups"></td></tr>
+<tr><td class="lbl">Interval (s)</td><td><input name="mq_interval" type="number" min="15" max="86400" value="%s"></td></tr>
+</table><div style="margin-top:12px"><button class="btn">Apply</button>
+<button class="btn sec" name="mq_test" value="1" style="margin-left:8px">Save &amp; Test Publish</button></div>
 </form>%s</div></div>""" % (
         so,
         "enabled" if mb_en else "disabled",
@@ -2816,7 +3018,22 @@ Status: <b>%s / %s</b>%s</p>
         "active" if ftp_act else "stopped",
         ("<br>Login: <code>nmcftp</code> &mdash; password <code>%s</code>"
          % esc(ftppw)) if ftppw and admin else "",
-        csrf, " checked" if ftp_en else "", sc)
+        csrf, " checked" if ftp_en else "",
+        esc(mqtt_cfg()["topic"]),
+        ("<br>Last publish: %s"
+         % (("<b>ok</b> %ds ago" % (int(time.time())
+                                   - _mqtt_state["at"]))
+            if _mqtt_state["ok"] else
+            "<span class='st-warn'>%s</span>" % esc(
+                _mqtt_state["err"] or "never"))),
+        csrf,
+        " checked" if mqtt_cfg()["enabled"] else "",
+        esc(mqtt_cfg()["host"]), esc(mqtt_cfg()["port"]),
+        " checked" if mqtt_cfg()["tls"] else "",
+        " checked" if mqtt_cfg()["insecure"] else "",
+        esc(mqtt_cfg()["user"]), esc(mqtt_cfg()["topic"]),
+        esc(str(mqtt_cfg()["interval"])),
+        sc)
 
     # ---- firewall -------------------------------------------------------
     fw_en, fw_act = svc_state("apc-nmc-firewall.service")
@@ -3098,6 +3315,12 @@ def pg_data():
                       '<table class="kv">%s</table></div></div>' % qr)
     return """<h1 class="page">Data Log</h1>
 %s<div class="card"><h3>Trend</h3><div class="pad">
+<div id="dlranges" style="margin-bottom:8px">
+<button class="btn sec dlrange act" data-h="24">24 h</button>
+<button class="btn sec dlrange" data-h="168"
+ style="margin-left:6px">7 days</button>
+<button class="btn sec dlrange" data-h="0"
+ style="margin-left:6px">All</button></div>
 <canvas id="dlc" width="1000" height="260"
  style="width:100%%;height:auto"></canvas>
 <div class="note" id="dllbl" style="margin-top:6px"></div>
@@ -3114,6 +3337,75 @@ def pg_data():
 <span class="note" id="dlnote" style="margin-left:10px">Sampled every 60 s, newest first &mdash; %s samples.</span></div>
 </div></div>
 <script>%s</script>""" % (ecard, total, _asset("datalog.js"))
+
+
+def support_bundle():
+    """tar.gz bytes of a diagnostics snapshot for support: versions,
+    sanitized config/events/state, UPS vars, service + journal output.
+    Secret-looking config values (passwords, tokens, keys, communities)
+    are redacted before packing."""
+    secret_re = re.compile(
+        r"(?im)^([ \t]*[\w.\[\]-]*(?:pass|secret|token|key|community|"
+        r"private)[\w.\[\]-]*[ \t]*[=:]).*$")
+
+    def sanitize(txt):
+        return secret_re.sub(r"\1 <redacted>", txt)
+
+    def put(tf, name, data):
+        b = data.encode("utf-8", "replace")
+        ti = tarfile.TarInfo(name)
+        ti.size = len(b)
+        tf.addfile(ti, io.BytesIO(b))
+
+    def sh(cmd, timeout=15):
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True,
+                               timeout=timeout, check=False)
+            return "$ %s\n%s%s" % (" ".join(cmd), r.stdout, r.stderr)
+        except Exception as e:
+            return "$ %s\n<%s>\n" % (" ".join(cmd), e)
+
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as tf:
+        put(tf, "meta.txt",
+            "apc-nmc support bundle\nversion: %s\ngenerated: %s\n"
+            % (installed_version(), time.strftime("%Y-%m-%d %H:%M:%S %z")))
+        try:
+            with open(CONF) as f:
+                put(tf, "nmc.conf", sanitize(f.read()))
+        except OSError:
+            pass
+        for src, arc in ((STATE_FILE, "state.json"),
+                         (EVENTS_FILE, "events.json")):
+            try:
+                with open(src) as f:
+                    put(tf, arc, sanitize(f.read()))
+            except OSError:
+                pass
+        try:
+            put(tf, "ups-vars.txt", "\n".join(
+                "%s: %s" % kv for kv in sorted(ups_vars().items())))
+        except Exception as e:
+            put(tf, "ups-vars.txt", "<%s>" % e)
+        put(tf, "services.txt", sh(
+            ["systemctl", "--no-pager", "--full", "status",
+             "apc-nmc-web.service", "nut-server.service",
+             "nut-monitor.service", "nut-driver@myups.service",
+             "apc-nmc-modbus.service", "net-watchdog.service"]))
+        put(tf, "failed-units.txt",
+            sh(["systemctl", "--no-pager", "--failed"]))
+        put(tf, "journal.txt", sh(
+            ["journalctl", "--no-pager", "-n", "400",
+             "-u", "apc-nmc-web.service", "-u", "nut-server.service",
+             "-u", "nut-driver@myups.service",
+             "-u", "apc-nmc-modbus.service"]))
+        put(tf, "update-log.txt", sh(["tail", "-200", UPDATE_LOG]))
+        put(tf, "network.txt",
+            sh(["ip", "addr"]) + sh(["ip", "route"]))
+        put(tf, "host.txt",
+            sh(["free", "-m"]) + sh(["df", "-h"]) + sh(["uptime"]) +
+            sh(["vcgencmd", "get_throttled"]))
+    return buf.getvalue()
 
 
 def pg_about(d, msg: "str | tuple" = ""):
@@ -3252,7 +3544,11 @@ def pg_about(d, msg: "str | tuple" = ""):
 %s""" % (csrf_input(d), dis, csrf_input(d), dis, rollbtn))
         utok = cfg("web", "api_token", "")
         tokdisp = ('<code style="word-break:break-all">%s</code>'
-                   % esc(utok) if utok else
+                   '<button class="btn sec" type="button" '
+                   'onclick="nmcCopy(this)" data-tok="%s" '
+                   'style="padding:2px 10px;font-size:12px;'
+                   'margin-left:8px">Copy</button>'
+                   % (esc(utok), esc(utok)) if utok else
                    '<span style="color:var(--mut)">not set</span>')
         tokclear = ("""<form method="post" action="/about/update/token"
  style="display:inline"
@@ -3284,7 +3580,13 @@ def pg_about(d, msg: "str | tuple" = ""):
  onsubmit="return confirm('%s')">%s
 <input type="hidden" name="act" value="generate">
 <button class="btn sec" type="submit">%s</button></form>
-%s</div></div></div>""" % (
+%s
+<h3 style="margin:20px 0 8px;font-size:14px">Support Bundle</h3>
+<p style="margin:0 0 10px;color:var(--mut)">Diagnostic snapshot —
+sanitized config, events, service states and recent journals packed
+into one download for support requests.</p>
+<div><a class="btn sec" href="/config/support.tgz">Download Bundle</a>
+</div></div></div>""" % (
             esc(cfg("update", "repo", "ArMaTeC/apcupspi")),
             esc(cfg("update", "branch", "main")),
             sel(cfg("update", "channel", "releases"), "releases", "branch"),
@@ -3890,6 +4192,28 @@ def do_test(which):
     if which == "calstop":
         return ups_cmd("calibrate.stop")
     return "ERR INVALID"
+
+
+def do_schedule(form):
+    """Save weekly self-test + UPS power-off schedules
+    ([schedule] in nmc.conf; empty weekday/hour = disabled)."""
+    for fkey, ckey in (("st_wd", "selftest_weekday"),
+                       ("sd_wd", "shutdown_weekday")):
+        v = form.get(fkey, [""])[0].strip()
+        if v and not re.fullmatch(r"[0-6]", v):
+            return ("msg-err", "weekday: invalid")
+        conf_set("schedule", ckey, v)
+    for fkey, ckey in (("st_hr", "selftest_hour"),
+                       ("sd_hr", "shutdown_hour")):
+        v = form.get(fkey, [""])[0].strip()
+        if v and not re.fullmatch(r"([01]?\d|2[0-3])", v):
+            return ("msg-err", "hour: invalid")
+        conf_set("schedule", ckey, v)
+    mode = form.get("sd_mode", ["return"])[0]
+    conf_set("schedule", "shutdown_mode",
+             "stayoff" if mode == "stayoff" else "return")
+    log_event("NMC: Schedule settings saved.")
+    return ("msg-ok", "Schedules saved.")
 
 
 def do_battery_replaced():
@@ -4585,6 +4909,49 @@ def do_services(form):
         return ("msg-ok", "FTP server %s."
                           % ("enabled" if form.get("ftp_en")
                              else "disabled"))
+    if svc == "mqtt":
+        host = v("mq_host")
+        if host and not re.fullmatch(r"[A-Za-z0-9._\-]{1,128}", host):
+            return ("msg-err", "broker host: invalid")
+        port = v("mq_port") or "1883"
+        if not re.fullmatch(r"\d{1,5}", port) \
+                or not 1 <= int(port) <= 65535:
+            return ("msg-err", "port: invalid")
+        topic = (v("mq_topic").strip("/") or "apc-nmc/myups")
+        if not re.fullmatch(r"[A-Za-z0-9_\-/]{1,96}", topic):
+            return ("msg-err",
+                    "topic prefix: letters, digits, _-/ only")
+        iv = v("mq_interval") or "60"
+        if not re.fullmatch(r"\d{1,5}", iv) \
+                or not 15 <= int(iv) <= 86400:
+            return ("msg-err", "interval: 15-86400")
+        conf_set("mqtt", "enabled", "1" if form.get("mq_en") else "0")
+        conf_set("mqtt", "host", host)
+        conf_set("mqtt", "port", port)
+        conf_set("mqtt", "tls", "1" if form.get("mq_tls") else "0")
+        conf_set("mqtt", "tls_insecure",
+                 "1" if form.get("mq_insecure") else "0")
+        conf_set("mqtt", "user", v("mq_user"))
+        if v("mq_pass"):
+            conf_set("mqtt", "password", v("mq_pass"))
+        elif form.get("clr_mq_pass"):
+            conf_set("mqtt", "password", "")
+        conf_set("mqtt", "topic", topic)
+        conf_set("mqtt", "interval", iv)
+        log_event("NMC: MQTT telemetry %s."
+                  % ("enabled" if form.get("mq_en") else "disabled"))
+        if form.get("mq_test"):
+            if not host:
+                return ("msg-err",
+                        "Saved; test skipped - no broker host set.")
+            ok, err = mqtt_send(json.dumps(
+                {"ts": int(time.time()), "test": True,
+                 "source": "apc-nmc"}))
+            if not ok:
+                return ("msg-err", "Saved; test publish failed: %s"
+                                   % esc(err))
+            return ("msg-ok", "Saved; test publish succeeded.")
+        return ("msg-ok", "MQTT settings saved.")
     return ("msg-err", "Unknown service.")
 
 
@@ -4973,11 +5340,25 @@ class H(BaseHTTPRequestHandler):
                     off, lim = 0, 150
                 return self._send(200, json.dumps(
                     datalog_page(data, off, lim)), "application/json")
+            try:
+                hours = float(q.get("hours", ["0"])[0])
+            except ValueError:
+                hours = 0
+            if hours > 0:
+                cut = time.time() - hours * 3600
+                data = [r for r in data if r.get("ts", 0) > cut]
             return self._send(200, json.dumps(data), "application/json")
         if p == "/config/wifi/scan":
             q = parse_qs(urlparse(self.path).query)
             return self._send(200, json.dumps(
                 wifi_scan(q.get("if", [""])[0])), "application/json")
+        if p == "/config/support.tgz":
+            if role != "admin":
+                return self._page(403, pg_403(), {}, p)
+            return self._send(200, support_bundle(), "application/gzip",
+                              {"Content-Disposition":
+                               "attachment; filename=apc-nmc-support.tgz",
+                               "Cache-Control": "no-store"})
         if p == "/config/backup":
             buf = io.BytesIO()
             with tarfile.open(fileobj=buf, mode="w:gz") as tf:
@@ -5086,9 +5467,12 @@ class H(BaseHTTPRequestHandler):
                 q = parse_qs(urlparse(self.path).query)
                 msg = ""
                 if q.get("r", [""])[0] == "ok":
-                    msg = ("msg-ok", "Command issued successfully.")
+                    msg = ("msg-ok", q.get("why", [""])[0]
+                           or "Command issued successfully.")
                 elif q.get("r", [""])[0] == "err":
                     msg = fmt_cmd_result(q.get("why", [""])[0])
+                elif q.get("r", [""])[0] == "cfgerr":
+                    msg = ("msg-err", q.get("why", ["Save failed"])[0])
                 b = pg_tests(d, msg)
                 section, leaf = "Tests", "Diagnostics"
             elif p == "/config/ups":
@@ -5296,6 +5680,16 @@ class H(BaseHTTPRequestHandler):
             if r.startswith("OK"):
                 return self._redir("/test/diag?r=ok")
             return self._redir("/test/diag?r=err&why=" + quote(r))
+        if p == "/test/schedule":
+            try:
+                res = do_schedule(f)
+            except Exception:
+                traceback.print_exc()
+                res = ("msg-err", "Save failed")
+            why = quote(res[1])
+            return self._redir("/test/diag?r=%s&why=%s"
+                               % ("ok" if res[0] == "msg-ok"
+                                  else "cfgerr", why))
         if p == "/config/ups":
             try:
                 res = do_config(f)
@@ -5466,6 +5860,7 @@ def main():
     log_event("NMC: Network management interface started.")
     threading.Thread(target=status_poller, daemon=True).start()
     threading.Thread(target=data_logger, daemon=True).start()
+    threading.Thread(target=mqtt_publisher, daemon=True).start()
 
     httpd = ThreadingHTTPServer(("0.0.0.0", 80), RedirectH)
     threading.Thread(target=httpd.serve_forever, daemon=True).start()

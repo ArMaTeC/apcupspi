@@ -1188,6 +1188,24 @@ select,
   }
 }
 
+/* Chart range selector on /log/data (datalog.js toggles .act). */
+.dlrange.act {
+  outline: 2px solid var(--apc);
+  outline-offset: -1px;
+}
+
+/* Persistent on-battery banner — toggled by the nmc.js status poll. */
+.obbanner {
+  background: var(--warnbg);
+  color: var(--warnfg);
+  border-bottom: 1px solid var(--warnfg);
+  font-weight: 600;
+  text-align: center;
+  padding: 6px 10px;
+  font-size: 13px;
+  letter-spacing: .02em;
+}
+
 /* Print stylesheet: content only - no chrome, no buttons. */
 @media print {
   .side,

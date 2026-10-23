@@ -19,18 +19,25 @@
 (function () {
     var CV = document.getElementById('dlc');
     if (!CV) return;                              // canvas not on page
-    fetch('/datalog.json').then(function (r) { return r.json(); })
+    var series = [['battery.charge', '#3dcd58', 'Charge %'],
+                  ['ups.load', '#409fff', 'Load %'],
+                  ['ups.realpower', '#d00000', 'Watts /10'],
+                  ['output.voltage', '#b7791f', 'Out V-200']];
+
+    // (Re)fetch + redraw for a range: hours=0 -> the whole log. The
+    // ?hours= filter is server-side; the unfiltered endpoint stays the
+    // default so other consumers keep the full array.
+    function draw(h) {
+        var url = '/datalog.json' + (h ? '?hours=' + h : '');
+        fetch(url).then(function (r) { return r.json(); })
         .then(function (arr) {
             var cx = CV.getContext('2d'), W = CV.width, H = CV.height;
+            cx.clearRect(0, 0, W, H);
             if (!arr || !arr.length) {
                 document.getElementById('dllbl').textContent =
-                    'No samples yet.';
+                    'No samples in this range.';
                 return;
             }
-            var series = [['battery.charge', '#3dcd58', 'Charge %'],
-                          ['ups.load', '#409fff', 'Load %'],
-                          ['ups.realpower', '#d00000', 'Watts /10'],
-                          ['output.voltage', '#b7791f', 'Out V-200']];
             var N = arr.length, t0 = arr[0].ts, t1 = arr[N - 1].ts,
                 span = Math.max(1, t1 - t0);
 
@@ -71,6 +78,20 @@
             document.getElementById('dllbl').textContent =
                 'Chart unavailable.';
         });
+    }
+
+    // Range buttons: 24 h is the default view — a full log redraw is
+    // only a click away and doesn't need to load on page entry.
+    document.querySelectorAll('.dlrange').forEach(function (b) {
+        b.onclick = function () {
+            document.querySelectorAll('.dlrange').forEach(function (x) {
+                x.classList.remove('act');
+            });
+            b.classList.add('act');
+            draw(parseFloat(b.getAttribute('data-h')) || 0);
+        };
+    });
+    draw(24);
 
     // ---- paged table, lazy loaded ------------------------------------
     // Rows come from /datalog.json?off=&lim= (newest first) a page at a

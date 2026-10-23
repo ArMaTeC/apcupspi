@@ -99,6 +99,24 @@ api_token =
 # weekly self-test: weekday 0-6 (Mon-Sun) + hour 0-23; empty = disabled
 selftest_weekday =
 selftest_hour =
+# scheduled UPS power-off: same weekday/hour form; empty = disabled
+# mode = return  -> power back on when utility power returns
+#        stayoff -> remain off until manually restarted
+shutdown_weekday =
+shutdown_hour =
+shutdown_mode = return
+
+[mqtt]
+# Periodic JSON telemetry publish to an MQTT broker (topic <prefix>/state).
+enabled = 0
+host =
+port = 1883
+tls = 0
+tls_insecure = 0
+user =
+password =
+topic = apc-nmc/myups
+interval = 60
 
 [update]
 # Software updates for this card (About > System > Check for updates).

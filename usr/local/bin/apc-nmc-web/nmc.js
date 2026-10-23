@@ -235,8 +235,69 @@ setInterval(function () {
             if (busy) b.title = 'an update is in progress';
             else b.removeAttribute('title');
         });
+        // Persistent on-battery banner — the alarm pill alone is easy
+        // to miss during an outage (real NMCs show a full-width alert).
+        var bb = document.getElementById('obbanner');
+        if (bb) {
+            var ob = (d['ups.status'] || '').indexOf('OB') >= 0;
+            bb.hidden = !ob;
+            if (ob) {
+                var inf = document.getElementById('obb'),
+                    t = [];
+                if (d['battery.charge'])
+                    t.push(d['battery.charge'] + '%');
+                var s = parseInt(d['battery.runtime'], 10);
+                if (s > 0) t.push(Math.floor(s / 60) + ' min left');
+                inf.textContent = t.length ? ' — ' + t.join(' · ') : '';
+            }
+        }
     }).catch(function () {
         var ld = document.getElementById('liveDot');
         if (ld) ld.classList.add('bad');
     });
 }, 5000);
+
+
+/* ------------------------------------------------------------------ *
+ * 4. nmcCopy(b) - clipboard helper for the About > API Token "Copy"   *
+ *    button (data-tok carries the secret so it never sits in JS).     *
+ * ------------------------------------------------------------------ */
+function nmcCopy(b) {
+    var t = b.getAttribute('data-tok') || '',
+        done = function () {
+            b.textContent = 'Copied!';
+            setTimeout(function () { b.textContent = 'Copy'; }, 1500);
+        };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(t).then(done);
+    } else {                                // fallback for old engines
+        var i = document.createElement('textarea');
+        i.value = t;
+        i.style.position = 'fixed';
+        i.style.opacity = '0';
+        document.body.appendChild(i);
+        i.select();
+        try { document.execCommand('copy'); } catch (e) {}
+        document.body.removeChild(i);
+        done();
+    }
+}
+
+
+/* ------------------------------------------------------------------ *
+ * 5. Dirty-form guard - any edit inside a POST form flags the page;   *
+ *    submitting clears it. beforeunload then warns only when an edit  *
+ *    would actually be lost (nav, close, reload).                     *
+ * ------------------------------------------------------------------ */
+var _nmcDirty = false;
+document.addEventListener('change', function (e) {
+    var f = e.target.closest && e.target.closest('form');
+    if (f && f.method === 'post') _nmcDirty = true;
+});
+document.addEventListener('submit', function () { _nmcDirty = false; });
+window.addEventListener('beforeunload', function (e) {
+    if (_nmcDirty) {
+        e.preventDefault();
+        e.returnValue = '';
+    }
+});

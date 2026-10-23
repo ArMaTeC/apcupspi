@@ -2,10 +2,12 @@
 version comparison — no NUT/UPS hardware needed."""
 import hashlib
 import importlib.util
+import io
 import json
 import os
 import struct
 import subprocess
+import tarfile
 import time
 from typing import Any
 
@@ -438,6 +440,109 @@ def test_wifi_hw_script(tmp_path):
     # garbage lines are ignored, file untouched
     out3 = run(out, "gpu=explode\nwifi=maybe\n")
     assert out3 == out
+
+
+def test_mqtt_wire():
+    """The stdlib client speaks enough MQTT for a broker to accept."""
+    import socket as _s
+    import threading as _t
+    srv = _s.socket()
+    srv.bind(("127.0.0.1", 0))
+    srv.listen(1)
+    got = []
+
+    def acc():
+        c, _ = srv.accept()
+        c.settimeout(4)
+        got.append(c.recv(4096))                     # CONNECT
+        c.sendall(b"\x20\x02\x00\x00")               # CONNACK accept
+        got.append(c.recv(4096))                     # PUBLISH
+        c.close()
+
+    th = _t.Thread(target=acc, daemon=True)
+    th.start()
+    port = srv.getsockname()[1]
+    ok, err = web.mqtt_publish("127.0.0.1", port, "a/b", '{"x":1}')
+    th.join(5)
+    srv.close()
+    assert ok, err
+    assert got[0][0] == 0x10 and b"MQTT" in got[0]   # CONNECT
+    assert got[1][0] >> 4 == 3                       # PUBLISH packet
+    assert b"a/b" in got[1] and b'{"x":1}' in got[1]
+
+
+def test_do_services_mqtt(monkeypatch):
+    conf = {}
+    monkeypatch.setattr(web, "conf_set",
+                        lambda s, k, v: conf.__setitem__((s, k), v))
+    monkeypatch.setattr(web, "log_event", lambda *a, **k: None)
+    sent = []
+    monkeypatch.setattr(web, "mqtt_send",
+                        lambda p: sent.append(p) or (True, ""))
+    f = {"svc": ["mqtt"], "mq_en": ["on"], "mq_host": ["broker.local"],
+         "mq_port": ["1883"], "mq_topic": ["apc-nmc/ups"],
+         "mq_interval": ["30"], "mq_test": ["1"]}
+    assert web.do_services(f)[0] == "msg-ok"
+    assert conf[("mqtt", "enabled")] == "1"
+    assert conf[("mqtt", "host")] == "broker.local"
+    assert conf[("mqtt", "topic")] == "apc-nmc/ups"
+    assert sent                                     # test publish ran
+    f["mq_host"] = ["bad host!"]
+    assert web.do_services(f)[0] == "msg-err"       # host charset
+    f["mq_host"] = ["broker.local"]
+    f["mq_interval"] = ["5"]
+    assert web.do_services(f)[0] == "msg-err"       # interval < 15
+
+
+def test_do_schedule(monkeypatch):
+    conf = {}
+    monkeypatch.setattr(web, "conf_set",
+                        lambda s, k, v: conf.__setitem__((s, k), v))
+    monkeypatch.setattr(web, "log_event", lambda *a, **k: None)
+    assert web.do_schedule({"st_wd": ["2"], "st_hr": ["3"],
+                            "sd_wd": ["5"], "sd_hr": ["22"],
+                            "sd_mode": ["stayoff"]})[0] == "msg-ok"
+    assert conf[("schedule", "selftest_weekday")] == "2"
+    assert conf[("schedule", "shutdown_weekday")] == "5"
+    assert conf[("schedule", "shutdown_mode")] == "stayoff"
+    assert web.do_schedule({"st_wd": ["9"]})[0] == "msg-err"
+    assert web.do_schedule({"sd_hr": ["25"]})[0] == "msg-err"
+
+
+def test_maybe_scheduled_shutdown(monkeypatch):
+    now = time.localtime()
+    conf = {("schedule", "shutdown_weekday"): str(now.tm_wday),
+            ("schedule", "shutdown_hour"): str(now.tm_hour),
+            ("schedule", "shutdown_mode"): "stayoff"}
+    st, calls = {}, []
+    monkeypatch.setattr(web, "cfg",
+                        lambda s, k, d="": conf.get((s, k), d))
+    monkeypatch.setattr(web, "cfg_get", lambda k, d="": st.get(k, d))
+    monkeypatch.setattr(web, "cfg_set",
+                        lambda k, v: st.__setitem__(k, v))
+    monkeypatch.setattr(web, "ups_cmd",
+                        lambda c: calls.append(c) or "OK")
+    monkeypatch.setattr(web, "log_event", lambda *a, **k: None)
+    web._maybe_scheduled_shutdown(True)
+    assert calls == ["shutdown.stayoff"]
+    web._maybe_scheduled_shutdown(True)             # once per day
+    assert calls == ["shutdown.stayoff"]
+    web._maybe_scheduled_shutdown(False)            # UPS offline
+    assert calls == ["shutdown.stayoff"]
+
+
+def test_support_bundle(tmp_path, monkeypatch):
+    conf = tmp_path / "nmc.conf"
+    conf.write_text("[web]\napi_token = secret123\n"
+                    "[mqtt]\npassword = hunter2\nhost = m.local\n")
+    monkeypatch.setattr(web, "CONF", str(conf))
+    data = web.support_bundle()
+    with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tf:
+        names = tf.getnames()
+        assert "meta.txt" in names and "nmc.conf" in names
+        c = tf.extractfile("nmc.conf").read().decode()
+    assert "secret123" not in c and "hunter2" not in c
+    assert "<redacted>" in c and "host = m.local" in c
 
 
 def test_wifi_scan_parse():

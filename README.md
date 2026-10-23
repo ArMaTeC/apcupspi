@@ -64,7 +64,10 @@ flowchart LR
 | 🔄 **Safe Updates** | Update to the newest GitHub release from the UI — sha256/signature-verified payload, live streaming build console, per-file backups + one-click rollback, global banner when an update exists |
 | 📈 **Metrics** | Prometheus `/metrics` endpoint + JSON API + raw `events.txt`/`data.txt` like a real card; optional read-only bearer token for monitoring clients |
 | 🏭 **Modbus TCP** | BMS-facing server on `:502` — discrete inputs for status flags, input registers for live readings, optional write access for UPS commands ([register map](docs/modbus-registers.md)) |
-| 👥 **User Roles** | 4-tier access (admin / device / network / readonly) with per-page and per-action enforcement, plus **RADIUS** fallback auth for web logins |
+| � **MQTT Telemetry** | Periodic JSON publish of the key UPS readings to a broker (`<topic>/state`) for Home Assistant / Node-RED — TLS, auth and a test-publish button |
+| ⏱️ **Scheduling** | Weekly self-test and scheduled UPS power-off (`shutdown.return`/`stayoff`) from the Diagnostics page |
+| 🧰 **Support Bundle** | One-click `support.tgz` download — sanitized config, events, service states and recent journals, secrets redacted |
+| �👥 **User Roles** | 4-tier access (admin / device / network / readonly) with per-page and per-action enforcement, plus **RADIUS** fallback auth for web logins |
 | 🛡️ **Network Security** | nftables firewall + wired **802.1X** (EAPoL) configured from the UI, optional chrooted **FTP server**, secure-boot status reporting |
 
 ## 📸 Screenshots
