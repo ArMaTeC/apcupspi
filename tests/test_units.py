@@ -241,6 +241,8 @@ def test_modbus_write_path():
 def test_beeper_control_actions():
     got = []
     web.ups_cmd = lambda c: got.append(c) or "OK"
+    web.log_event = lambda *a, **k: None   # keep tests off the real
+    web.save_state = lambda *a, **k: None  # event log + notify channels
     assert web.do_control("beep_on", "", "").startswith("OK")
     assert web.do_control("beep_off", "", "").startswith("OK")
     assert web.do_control("mute", "", "").startswith("OK")
@@ -256,3 +258,50 @@ def test_beeper_radio_options():
         assert f'value="{act}"' in html
     html = web.pg_control({"__csrf": "x"}, cmds=["load.on"])
     assert "beep_on" not in html and "beep_off" not in html
+
+
+def test_config_merge_defaults(tmp_path):
+    dflt = tmp_path / "nmc.conf.default"
+    dflt.write_text("[modbus]\n# daemon bind\nbind = 0.0.0.0\n"
+                    "port = 502\n\n[web]\nuser = apc\n")
+    conf = tmp_path / "nmc.conf"
+    conf.write_text("[web]\nuser = admin\n")
+    web.CONF = str(conf)
+    merged = web.config_merge_defaults(str(dflt))
+    t = conf.read_text()
+    assert merged == ["modbus.bind", "modbus.port"]
+    assert "[modbus]" in t and "bind = 0.0.0.0" in t
+    assert "# daemon bind" in t                # doc comment copied
+    assert "user = admin" in t                 # existing value untouched
+    assert web.config_merge_defaults(str(dflt)) == []   # idempotent
+
+
+def test_do_wifi_validation():
+    web.wifi_status = lambda: ("enabled", "", True)
+    web.net_ifaces = lambda p: ["wlan0"]
+    calls = []
+    web._nmcli = lambda *a, timeout=15: calls.append(a) or (0, "ok")
+    web._run = lambda c, t=20: (0, "")
+    web.log_event = lambda *a, **k: None
+    assert web.do_wifi({"act": ["on"]})[0] == "msg-ok"
+    assert web.do_wifi({"act": ["connect"], "w_ssid": ["Net"],
+                        "w_if": ["wlan0"], "w_psk": ["12345678"]})[0] \
+        == "msg-ok"
+    assert web.do_wifi({"act": ["connect"], "w_ssid": ["Net"],
+                        "w_if": ["wlan0"], "w_psk": ["x"]})[0] \
+        == "msg-err"                          # too-short passphrase
+    assert web.do_wifi({"act": ["connect"], "w_ssid": ["Net"],
+                        "w_if": ["eth0"], "w_psk": [""]})[0] \
+        == "msg-err"                          # non-wireless ifname
+    assert calls[-1] == ("dev", "wifi", "connect", "Net",
+                         "ifname", "wlan0", "password", "12345678")
+
+
+def test_wifi_scan_parse():
+    web._nmcli = lambda *a, timeout=15: \
+        (0, "CorpNet:80:WPA2\nCorpNet:99:WPA2\nHome:50:\n:10:")
+    nets = web.wifi_scan("wlan0")
+    assert [n["ssid"] for n in nets] == ["CorpNet", "Home"]
+    assert nets[0]["signal"] == 99            # strongest dup wins
+    web._nmcli = lambda *a, timeout=15: (1, "err")
+    assert web.wifi_scan() == []              # nmcli failure -> []

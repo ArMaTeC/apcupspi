@@ -305,6 +305,28 @@ EOF
         && deploy etc/vsftpd.conf /etc/vsftpd.conf 0644 \
         || true
 
+    # Adopt newly shipped config options: write the default value for any
+    # section.key the live nmc.conf doesn't set yet, so new features are
+    # visible/editable instead of merely listed as unset on the About
+    # page. Existing admin values are never touched. Runs through the
+    # just-deployed web module so the merge semantics stay identical.
+    NEWKEYS=$(python3 - <<'PYEOF'
+import importlib.util
+try:
+    s = importlib.util.spec_from_file_location(
+        "nmcweb", "/usr/local/bin/apc-nmc-web.py")
+    m = importlib.util.module_from_spec(s)
+    s.loader.exec_module(m)
+    for k in m.config_merge_defaults():
+        print(k)
+except Exception:
+    pass
+PYEOF
+)
+    [ -n "$NEWKEYS" ] \
+        && say "  adopted new config options:" \
+        && echo "$NEWKEYS" | sed 's/^/    /'
+
     # Driver + modbus library: rebuild from the vendored sources when
     # they and a toolchain are present — same result install.sh produces.
     # The shipped prebuilt binary is the fallback (no sources, no

@@ -58,7 +58,7 @@ flowchart LR
 | 🌐 **NMC2 Web UI** | Port `443` (`:80` redirects) — status, logs, control, tests and configuration, backed live by NUT |
 | 📡 **SNMP Agent** | Port `161` — APC PowerNet-MIB (`.1.3.6.1.4.1.318`) via `pass_persist`; v1/v2c communities + v3 read-only user; GET/GETNEXT/SET + traps |
 | 🔋 **NUT Backend** | `upsd` on `3493` + `upsmon` shutdown controller; `apc_modbus` **built from vendored NUT 2.8.5 source** on the target (prebuilt binary as fallback); auto-detects the UPS USB VID/PID at driver start |
-| 🛡️ **Resilience** | Kernel watchdog + `RuntimeWatchdogSec`, panic-reboot sysctl, per-service OOM tuning, `net-watchdog` connectivity recovery (per-interface gateway checks, Wi-Fi firmware wedge recovery) |
+| 🛡️ **Resilience** | Kernel watchdog + `RuntimeWatchdogSec`, panic-reboot sysctl, per-service OOM tuning, `net-watchdog` connectivity recovery (layered ICMP/routed/ARP liveness probes, Wi-Fi firmware wedge recovery, bounded reboots) |
 | 🔔 **Alerts** | UPS events pushed to Discord, Teams, HTTP webhook, email (SMTP), syslog or **secure syslog (TLS)** — per-event routing matrix + severity filter + test buttons |
 | 🧙 **Setup Wizard** | Interactive first-boot wizard (hostname, credentials, network, UPS, SNMP, alerts, certs) — re-runnable anytime |
 | 🔄 **Safe Updates** | Update to the newest GitHub release from the UI — sha256/signature-verified payload, live streaming build console, per-file backups + one-click rollback, global banner when an update exists |

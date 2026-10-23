@@ -412,6 +412,72 @@ def svc_apply(name, enable):
     return rc == 0, out
 
 
+def net_ifaces(prefixes):
+    """Detected interface names under /sys/class/net filtered by name
+    prefix (loopback excluded): ("e",) -> wired, ("wl",) -> wireless."""
+    try:
+        return sorted(n for n in os.listdir("/sys/class/net")
+                      if n != "lo" and n.startswith(prefixes))
+    except OSError:
+        return []
+
+
+def _run(cmd, timeout=20):
+    """Run a command -> (rc, combined output); tolerates missing tools."""
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True,
+                           timeout=timeout, check=False)
+        return r.returncode, (r.stdout + r.stderr).strip()
+    except Exception as e:
+        return 1, str(e)
+
+
+def _nmcli(*args, timeout=15):
+    return _run(["nmcli"] + list(args), timeout)
+
+
+def wifi_status():
+    """-> (radio state str, active wifi connection name, nm available)."""
+    try:
+        with open("/usr/bin/nmcli"):
+            pass
+    except OSError:
+        return "unavailable", "", False
+    _rc, radio = _nmcli("-t", "-f", "WIFI", "general")
+    conn = ""
+    _rc, out = _nmcli("-t", "-f", "NAME,DEVICE", "con", "show", "--active")
+    for ln in out.splitlines():
+        name, _, dev = ln.rpartition(":")
+        if dev.startswith("wl"):
+            conn = name
+            break
+    return radio or "unknown", conn, True
+
+
+def wifi_scan(ifname=""):
+    """-> [{'ssid','signal','security'}] from nmcli dev wifi list."""
+    args = ["-t", "-f", "SSID,SIGNAL,SECURITY", "dev", "wifi", "list"]
+    if ifname:
+        args += ["ifname", ifname]
+    rc, out = _nmcli(*args, timeout=25)
+    if rc != 0:
+        return []
+    nets = {}
+    for ln in out.splitlines():
+        parts = ln.rsplit(":", 2)          # SSID:SIGNAL:SECURITY
+        if len(parts) != 3 or not parts[0]:
+            continue
+        ssid, sig, secu = parts
+        try:
+            sig = int(sig)
+        except ValueError:
+            sig = 0
+        if ssid not in nets or sig > nets[ssid]["signal"]:
+            nets[ssid] = {"ssid": ssid, "signal": sig,
+                          "security": secu}
+    return sorted(nets.values(), key=lambda n: -n["signal"])[:20]
+
+
 def secure_boot_status():
     """Best-effort Raspberry Pi secure-boot state: Pi 5/CM4 signed boot
     surfaces as a bootloader devicetree property; other platforms can't
@@ -529,7 +595,7 @@ ROLE_POSTS = {
     "device": ("/control/", "/test/diag", "/status/battery",
                "/config/ups", "/config/outlets"),
     "network": ("/config/notify", "/config/services",
-                "/config/firewall", "/config/dot1x"),
+                "/config/firewall", "/config/dot1x", "/config/wifi"),
     "readonly": (),
 }
 
@@ -2663,13 +2729,17 @@ any service. Status: <b>%s / %s</b></p>
 
     # ---- 802.1X ---------------------------------------------------------
     dx_en, dx_act = svc_state("apc-nmc-dot1x.service")
+    dx_if = cfg("dot1x", "iface", "eth0")
+    wifaces = net_ifaces(("e",))
+    if dx_if not in wifaces:
+        wifaces.append(dx_if)
     dxcard = """<div class="card"><h3>Wired 802.1X (EAPoL)</h3><div class="pad">
 <p class="mut" style="margin-top:0">Port authentication on the wired
 interface via wpa_supplicant. Status: <b>%s / %s</b></p>
 <form method="post" action="/config/dot1x"><table class="kv">
 %s
 <tr><td class="lbl">Enabled</td><td><input type="checkbox" name="x_en"%s></td></tr>
-<tr><td class="lbl">Interface</td><td><input name="x_if" maxlength="15" value="%s"></td></tr>
+<tr><td class="lbl">Interface</td><td>%s</td></tr>
 <tr><td class="lbl">EAP Method</td><td>%s</td></tr>
 <tr><td class="lbl">Identity</td><td><input name="x_id" maxlength="64" value="%s"></td></tr>
 <tr><td class="lbl">Password (PEAP)</td><td>%s</td></tr>
@@ -2683,7 +2753,7 @@ interface via wpa_supplicant. Status: <b>%s / %s</b></p>
         "enabled" if dx_en else "disabled",
         "active" if dx_act else "stopped",
         csrf, " checked" if dx_en else "",
-        esc(cfg("dot1x", "iface", "eth0")),
+        sel("x_if", dx_if, [(i, i) for i in wifaces]),
         sel("x_eap", cfg("dot1x", "eap", "PEAP").upper(),
             [(e, e) for e in ("PEAP", "TTLS", "TLS", "FAST")]),
         esc(cfg("dot1x", "identity", "")),
@@ -2695,6 +2765,67 @@ interface via wpa_supplicant. Status: <b>%s / %s</b></p>
         secf("x_pkpass", cfg("dot1x", "private_key_pass", ""),
              "key password"))
 
+    # ---- wifi setup ----------------------------------------------------
+    wlifaces = net_ifaces(("wl",))
+    wradio, wconn, has_nm = wifi_status()
+    if not has_nm:
+        wcard = """<div class="card"><h3>WiFi Setup</h3><div class="pad">
+<p class="note">NetworkManager (nmcli) is not installed — onboard WiFi
+setup is unavailable.</p></div></div>"""
+    elif not wlifaces:
+        wcard = """<div class="card"><h3>WiFi Setup</h3><div class="pad">
+<p class="note">No wireless interface detected.</p></div></div>"""
+    else:
+        wcard = """<div class="card"><h3>WiFi Setup</h3><div class="pad">
+<p class="mut" style="margin-top:0">Onboard wireless (Pi 3/4/5) via
+NetworkManager. Radio: <b>%s</b>%s</p>
+<div style="margin-bottom:14px;display:flex;gap:10px;flex-wrap:wrap">
+<form method="post" action="/config/wifi">%s
+<input type="hidden" name="act" value="%s">
+<button class="btn sec" type="submit">%s</button></form>%s</div>
+<form method="post" action="/config/wifi"><table class="kv">
+%s<input type="hidden" name="act" value="connect">
+<tr><td class="lbl">Interface</td><td>%s</td></tr>
+<tr><td class="lbl">Network (SSID)</td><td>
+<input name="w_ssid" id="wssid" list="wlist" maxlength="32" required>
+<datalist id="wlist"></datalist>
+<button class="btn sec" type="button" id="wscanbtn">Scan</button>
+<span class="note" id="wscanmsg"></span></td></tr>
+<tr><td class="lbl">Password</td><td><input name="w_psk" type="password" autocomplete="off" maxlength="64" placeholder="blank for open networks"></td></tr>
+</table><div style="margin-top:12px"><button class="btn" type="submit">Connect</button></div></form>
+<script>
+(function(){var b=document.getElementById('wscanbtn');
+if(!b)return;
+b.onclick=function(){var msg=document.getElementById('wscanmsg');
+msg.textContent='scanning\\u2026';
+fetch('/config/wifi/scan?if='+encodeURIComponent(
+  document.getElementById('w_if').value))
+.then(function(r){return r.json()})
+.then(function(ns){var l=document.getElementById('wlist');
+ l.innerHTML='';ns.forEach(function(n){var o=document.createElement('option');
+ o.value=n.ssid;o.label=n.signal+'%% '+(n.security||'open');
+ l.appendChild(o)});
+ msg.textContent=ns.length?ns.length+' network(s)':'none found';
+ document.getElementById('wssid').focus()})
+.catch(function(){msg.textContent='scan failed'})}})();
+</script></div></div>""" % (
+            esc(wradio),
+            (" &mdash; connected to <b>%s</b>" % esc(wconn)) if wconn else "",
+            csrf,
+            "off" if wradio == "enabled" else "on",
+            "Deactivate WiFi" if wradio == "enabled"
+            else "Activate WiFi Setup",
+            ('<form method="post" action="/config/wifi">%s'
+             '<input type="hidden" name="act" value="disconnect">'
+             '<input type="hidden" name="w_if" value="%s">'
+             '<button class="btn sec">Disconnect</button></form>'
+             % (csrf, esc(wlifaces[0]))) if wconn else "",
+            csrf,
+            ('<select name="w_if" id="w_if">%s</select>' % "".join(
+                '<option value="%s"%s>%s</option>'
+                % (i, " selected" if i == wlifaces[0] else "", esc(i))
+                for i in wlifaces)))
+
     sb = secure_boot_status()
     sbcard = """<div class="card"><h3>Secure Boot</h3><div class="pad">
 <table class="kv"><tr><td class="lbl">Status</td><td>%s</td></tr></table>
@@ -2703,7 +2834,8 @@ provisioning by hand &mdash; see docs/secure-boot.md. It cannot be
 enabled from this interface.</p></div></div>""" % esc(sb)
 
     return """<h1 class="page">System Configuration</h1>%s
-%s%s%s%s%s%s""" % (m, ucard, rcard, scard, fwcard, dxcard, sbcard)
+%s%s%s%s%s%s%s""" % (m, ucard, rcard, scard, fwcard, dxcard,
+                     wcard, sbcard)
 
 
 def pg_events(d, msg=""):
@@ -2917,7 +3049,8 @@ def pg_about(d, msg: "str | tuple" = ""):
     if newkeys:
         upd += kv("New Config Options",
                   '<span class="st-warn">%s</span> &mdash; unset in '
-                  'nmc.conf' % esc(", ".join(newkeys)))
+                  'nmc.conf; defaults are adopted automatically on the '
+                  'next update' % esc(", ".join(newkeys)))
     def sel(cur, *opts):
         return "".join('<option value="%s"%s>%s</option>'
                        % (o, " selected" if o == cur else "", esc(o))
@@ -3776,6 +3909,94 @@ def config_new_keys(default="/etc/apc-nmc/nmc.conf.default", live=None):
             if not (cp_live.has_section(s) and k in cp_live.options(s))]
 
 
+def config_merge_defaults(default="/etc/apc-nmc/nmc.conf.default"):
+    """Materialize defaults for section.key options shipped in
+    nmc.conf.default that the live nmc.conf does not set — the updater
+    runs this so new options appear in the config instead of only being
+    listed as unset. Existing admin values are never touched; a key
+    present only as a commented line is replaced in place. Doc comments
+    immediately above a key are copied with it. Returns the merged
+    section.key list."""
+    try:
+        with open(default) as f:
+            dlines = f.read().splitlines()
+    except OSError:
+        return []
+    wanted = []                          # (sec, key, val, doc-comments)
+    sec, pend = None, []
+    for ln in dlines:
+        m = re.match(r"\s*\[\s*([^]]+)", ln)
+        if m:
+            sec, pend = m.group(1).strip(), []
+            continue
+        if sec is None:
+            continue
+        if not ln.strip():
+            pend = []
+            continue
+        if ln.lstrip().startswith("#"):
+            # keep doc comments; skip commented-out example keys
+            if not re.match(r"#\s*[A-Za-z_0-9]+\s*=", ln):
+                pend.append(ln.strip())
+            continue
+        k, sep, v = ln.partition("=")
+        if not sep:
+            pend = []
+            continue
+        wanted.append((sec, k.strip(), v.strip(), pend))
+        pend = []
+    try:
+        with open(CONF) as f:
+            lines = f.read().splitlines()
+    except OSError:
+        lines = []
+    merged = []
+    for sec, key, val, comments in wanted:
+        cp = configparser.ConfigParser()
+        cp.read_string("\n".join(lines))
+        if cp.has_section(sec) and key in cp.options(sec):
+            continue                                # admin already set it
+        key_re = re.compile(r"^\s*#?\s*" + re.escape(key) + r"\s*=")
+        ins = comments + ["%s = %s" % (key, val)]
+        out, cur, done = [], "", False
+        for line in lines:
+            m = re.match(r"\s*\[\s*([^]]+)", line)
+            if m:
+                s = m.group(1).strip()
+                if cur == sec and not done:         # leaving our section
+                    out += ins                      # key never found
+                    done = True
+                cur = s
+                out.append(line)
+                continue
+            if cur == sec and key_re.match(line):
+                if not done:                        # replace commented key
+                    out.append("%s = %s" % (key, val))
+                    done = True
+                continue                            # drop duplicate
+            out.append(line)
+        if not done:
+            if cur == sec:                          # section at EOF
+                out += ins
+            else:                                   # section absent
+                out += ["", "[%s]" % sec] + ins
+        lines = out
+        merged.append("%s.%s" % (sec, key))
+    if merged:
+        tmp = CONF + ".tmp"
+        with open(tmp, "w") as f:
+            f.write("\n".join(lines) + "\n")
+        try:
+            st = os.stat(CONF)          # keep the live file's mode + group
+            os.chown(tmp, -1, st.st_gid)
+            os.chmod(tmp, st.st_mode & 0o777)
+        except OSError:
+            os.chmod(tmp, 0o640)
+        os.replace(tmp, CONF)
+        _cp.read(CONF)
+    return merged
+
+
 def do_update_check():
     """Run the check through apc-nmc-update.sh so UI and CLI share one
     implementation (and one cache file the About page reads)."""
@@ -4210,6 +4431,64 @@ def do_dot1x(form):
     return ("msg-ok", "802.1X settings saved.")
 
 
+def do_wifi(form):
+    """WiFi setup actions: activate the radio, scan-agnostic connect,
+    disconnect, or power the radio off (all via NetworkManager)."""
+    act = form.get("act", [""])[0]
+    _radio, _conn, has_nm = wifi_status()
+    if not has_nm:
+        return ("msg-err", "NetworkManager (nmcli) not detected.")
+    if act == "on":
+        _run(["rfkill", "unblock", "wifi"], 8)
+        rc, out = _nmcli("radio", "wifi", "on")
+        log_event("NMC: WiFi setup activated on %s." %
+                  (net_ifaces(("wl",)) or ["wlan?"])[0])
+        if rc == 0:
+            return ("msg-ok", ("WiFi radio enabled - scan and connect "
+                              "below."))
+        return ("msg-err", "WiFi enable failed: %s" % esc(out))
+    if act == "off":
+        rc, out = _nmcli("radio", "wifi", "off")
+        log_event("NMC: WiFi radio switched off.")
+        if rc == 0:
+            return ("msg-ok", "WiFi radio switched off.")
+        return ("msg-err", "WiFi disable failed: %s" % esc(out))
+    if act == "disconnect":
+        ifn = form.get("w_if", [""])[0].strip()
+        if ifn not in net_ifaces(("wl",)):
+            return ("msg-err", "Unknown wireless interface.")
+        rc, out = _nmcli("dev", "disconnect", ifn, timeout=20)
+        log_event("NMC: WiFi disconnected on %s." % ifn)
+        if rc == 0:
+            return ("msg-ok", "Disconnected from WiFi.")
+        return ("msg-err", "Disconnect failed: %s" % esc(out))
+    if act != "connect":
+        return ("msg-err", "Unknown action.")
+    ssid = form.get("w_ssid", [""])[0].strip()
+    ifn = form.get("w_if", [""])[0].strip()
+    psk = form.get("w_psk", [""])[0]
+    if not 1 <= len(ssid.encode("utf-8", "replace")) <= 32:
+        return ("msg-err", "SSID must be 1-32 bytes.")
+    if ifn and ifn not in net_ifaces(("wl",)):
+        return ("msg-err", "Unknown wireless interface.")
+    if psk and not (re.fullmatch(r"[\x20-\x7e]{8,63}", psk)
+                    or re.fullmatch(r"[0-9a-fA-F]{64}", psk)):
+        return ("msg-err", ("Passphrase must be 8-63 printable "
+                           "characters or a 64-digit hex PSK."))
+    args = ["dev", "wifi", "connect", ssid]
+    if ifn:
+        args += ["ifname", ifn]
+    if psk:
+        args += ["password", psk]
+    rc, out = _nmcli(*args, timeout=45)
+    if rc == 0:
+        log_event("NMC: WiFi connected to \"%s\" on %s."
+                  % (ssid, ifn or "wlan"))
+        return ("msg-ok", "Connected to %s." % esc(ssid))
+    log_event("NMC: WiFi connection to \"%s\" failed." % ssid)
+    return ("msg-err", "Connect failed: %s" % esc(out))
+
+
 # ============================================================ http
 SEC_HEADERS = {
     "X-Frame-Options": "DENY",
@@ -4436,6 +4715,10 @@ class H(BaseHTTPRequestHandler):
         if p == "/datalog.json":
             return self._send(200, json.dumps(load_data()),
                               "application/json")
+        if p == "/config/wifi/scan":
+            q = parse_qs(urlparse(self.path).query)
+            return self._send(200, json.dumps(
+                wifi_scan(q.get("if", [""])[0])), "application/json")
         if p == "/config/backup":
             buf = io.BytesIO()
             with tarfile.open(fileobj=buf, mode="w:gz") as tf:
@@ -4784,7 +5067,8 @@ class H(BaseHTTPRequestHandler):
                        ("/config/radius", do_radius),
                        ("/config/services", do_services),
                        ("/config/firewall", do_firewall),
-                       ("/config/dot1x", do_dot1x)):
+                       ("/config/dot1x", do_dot1x),
+                       ("/config/wifi", do_wifi)):
             if p == pp:
                 try:
                     res = fn(f)
