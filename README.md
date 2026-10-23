@@ -69,6 +69,7 @@ flowchart LR
 | 🧰 **Support Bundle** | One-click `support.tgz` download — sanitized config, events, service states and recent journals, secrets redacted |
 | �👥 **User Roles** | 4-tier access (admin / device / network / readonly) with per-page and per-action enforcement, plus **RADIUS** fallback auth for web logins |
 | 🛡️ **Network Security** | nftables firewall + wired **802.1X** (EAPoL) configured from the UI, optional chrooted **FTP server**, secure-boot status reporting |
+| ❓ **In-App Help** | Full built-in documentation (16 topics — every page, roles, API, glossary, troubleshooting) plus `?` tooltips on form fields |
 
 ## 📸 Screenshots
 

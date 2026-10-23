@@ -1,0 +1,24 @@
+<p>کارت چهار سطح دسترسی دارد که در جدول زیر خلاصه شده‌اند. نقش هر کاربر هنگام ورود تعیین می‌شود و کنار نام او در نوار بالا نمایش داده می‌شود.</p>
+
+<table>
+ <tr><th>قابلیت</th><th>Admin</th><th>Device</th><th>Network</th><th>Read-Only</th></tr>
+ <tr><td>مشاهده همه صفحات</td><td>✔</td><td>✔</td><td>✔</td><td>✔</td></tr>
+ <tr><td>تغییر رمز خودش</td><td>✔</td><td>✔</td><td>✔</td><td>✔</td></tr>
+ <tr><td>تنظیمات UPS</td><td>✔</td><td>✔</td><td>—</td><td>—</td></tr>
+ <tr><td>فرمان کنترلی UPS</td><td>✔</td><td>✔</td><td>—</td><td>—</td></tr>
+ <tr><td>خودآزمایی / کالیبراسیون / زمان‌بندی</td><td>✔</td><td>✔</td><td>—</td><td>—</td></tr>
+ <tr><td>تنظیمات اعلان‌ها</td><td>✔</td><td>—</td><td>✔</td><td>—</td></tr>
+ <tr><td>سرویس‌ها / فایروال / 802.1X / WiFi</td><td>✔</td><td>—</td><td>✔</td><td>—</td></tr>
+ <tr><td>مدیریت کاربران</td><td>✔</td><td>—</td><td>—</td><td>—</td></tr>
+ <tr><td>Backup/Restore، Update، API Token</td><td>✔</td><td>—</td><td>—</td><td>—</td></tr>
+ <tr><td>پاک کردن Event Log / Support Bundle</td><td>✔</td><td>—</td><td>—</td><td>—</td></tr>
+</table>
+
+<h4>نکات</h4>
+<ul>
+ <li><b>Device Only</b> برای اپراتورهایی است که فقط باید UPS را مدیریت کنند و به تنظیمات شبکه دست نزنند.</li>
+ <li><b>Network-Only</b> برعکس — شبکه و سرویس‌ها را مدیریت می‌کند ولی به UPS فرمان نمی‌فرستد.</li>
+ <li><b>Read-Only</b> برای مانیتورینگ — همه صفحات را می‌بیند ولی هیچ کنترل فعالی ندارد؛ فرم‌ها برایش غیرفعال (خاکستری) دیده می‌شوند.</li>
+ <li>کنترل‌هایی که نقش شما اجازه ندارد اصلاً رندر نمی‌شوند یا disabled‌اند؛ حتی اگر URL را دستی بزنید هم سرور 403 برمی‌گرداند.</li>
+ <li>نقش کاربران RADIUS از فیلد «Default Role» تنظیمات RADIUS می‌آید.</li>
+</ul>

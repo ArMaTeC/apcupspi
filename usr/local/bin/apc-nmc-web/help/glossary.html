@@ -1,0 +1,34 @@
+<h4>کدهای وضعیت NUT (ups.status)</h4>
+<table>
+ <tr><th>کد</th><th>معنی</th></tr>
+ <tr><td><code>OL</code></td><td>Online — روی برق شهر، وضعیت عادی</td></tr>
+ <tr><td><code>OB</code></td><td>On Battery — برق قطع، روی باتری</td></tr>
+ <tr><td><code>LB</code></td><td>Low Battery — زمان کارکرد باتری به آستانه پایین رسیده</td></tr>
+ <tr><td><code>RB</code></td><td>Replace Battery — UPS می‌گوید باتری باید تعویض شود</td></tr>
+ <tr><td><code>HB</code></td><td>High Battery — باتری بالای حد مجاز شارژ شده</td></tr>
+ <tr><td><code>CHRG</code></td><td>Charging — در حال شارژ باتری</td></tr>
+ <tr><td><code>DISCHRG</code></td><td>Discharging — در حال تخلیه</td></tr>
+ <tr><td><code>BYPASS</code></td><td>بار از مسیر بای‌پس تغذیه می‌شود نه اینورتر</td></tr>
+ <tr><td><code>CAL</code></td><td>Runtime calibration در حال اجراست</td></tr>
+ <tr><td><code>TEST</code></td><td>Self-test در حال اجراست</td></tr>
+ <tr><td><code>OVER</code></td><td>Overload — بار بیش از ظرفیت UPS</td></tr>
+ <tr><td><code>TRIM / BOOST</code></td><td>AVR در حال کم/زیاد کردن ولتاژ</td></tr>
+ <tr><td><code>OFF</code></td><td>UPS خاموش/آفلاین است</td></tr>
+ <tr><td><code>FSD</code></td><td>Forced Shutdown — فرمان خاموش اضطراری فعال شده</td></tr>
+ <tr><td><code>ALARM</code></td><td>هشدار داخلی UPS فعال است</td></tr>
+</table>
+<p>چند کد هم‌زمان می‌توانند با فاصله ترکیب شوند، مثلاً <code>OL CHRG</code> یا <code>OB DISCHRG LB</code>.</p>
+
+<h4>اصطلاحات</h4>
+<table>
+ <tr><th>عبارت</th><th>معنی</th></tr>
+ <tr><td>Runtime</td><td>مدت زمانی که UPS با بار فعلی روی باتری دوام می‌آورد</td></tr>
+ <tr><td>Transfer</td><td>گذار بین برق شهر و باتری (یا بای‌پس)</td></tr>
+ <tr><td>VA vs W</td><td>توان ظاهری در برابر توان واقعی؛ UPSها معمولاً VA نامی دارند</td></tr>
+ <tr><td>NUT</td><td>Network UPS Tools — پشتیبان لینوکسی که با UPS صحبت می‌کند</td></tr>
+ <tr><td>NMC</td><td>Network Management Card — کارت مدیریت شبکه UPS</td></tr>
+ <tr><td>BMS</td><td>Building Management System — سیستم مدیریت ساختمان (Modbus/BACnet)</td></tr>
+ <tr><td>PCNS</td><td>PowerChute Network Shutdown — نرم‌افزار APC برای خاموش امن سرورها</td></tr>
+ <tr><td>EAPoL / 802.1X</td><td>احراز هویت پورت اترنت روی سوئیچ‌های مدیریت‌شده</td></tr>
+ <tr><td>EPO</td><td>Emergency Power Off — قطع اضطراری خروجی</td></tr>
+</table>

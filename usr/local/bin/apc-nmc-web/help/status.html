@@ -1,0 +1,31 @@
+<p>صفحه <b>Status › UPS Status</b> جزئیات کامل وضعیت UPS را از سرور NUT می‌خواند و هر چند ثانیه تازه می‌کند.</p>
+
+<h4>بلوک وضعیت اصلی</h4>
+<table>
+ <tr><th>فیلد</th><th>معنی</th></tr>
+ <tr><td>Status</td><td>کد وضعیت NUT. مهم‌ترین‌ها: <code>OL</code> آنلاین، <code>OB</code> روی باتری، <code>LB</code> باتری کم، <code>RB</code> باتری نیاز به تعویض، <code>OVER</code> اضافه‌بار، <code>BYPASS</code> روی بای‌پس. فهرست کامل در <a href="/help/glossary">واژه‌نامه</a>.</td></tr>
+ <tr><td>Input Voltage</td><td>ولتاژ ورودی برق شهر (ولت)</td></tr>
+ <tr><td>Output Voltage</td><td>ولتاژ خروجی UPS به مصرف‌کننده‌ها</td></tr>
+ <tr><td>Load</td><td>درصد بار نسبت به توان نامی UPS؛ بالای ~۸۰٪ هشدار است</td></tr>
+ <tr><td>Battery Charge</td><td>درصد شارژ باتری</td></tr>
+ <tr><td>Battery Runtime</td><td>برآورد UPS از زمان کارکرد با بار فعلی (دقیقه)</td></tr>
+ <tr><td>Battery Voltage</td><td>ولتاژ لحظه‌ای باتری</td></tr>
+ <tr><td>Temperature</td><td>دمای داخلی UPS در صورت گزارش</td></tr>
+ <tr><td>Input Frequency</td><td>فرکانس برق شهر (هرتز)</td></tr>
+</table>
+
+<h4>اطلاعات باتری و دستگاه</h4>
+<ul>
+ <li><b>Battery Install/Replace Date:</b> تاریخ نصب/تعویض باتری از روی UPS خوانده می‌شود. اگر باتری را عوض کردید با دکمه «Battery Replaced» تاریخ امروز ثبت می‌شود.</li>
+ <li><b>Model / Serial / Firmware:</b> از <code>device.model</code>، <code>ups.serial</code> و <code>ups.firmware</code> خوانده می‌شود.</li>
+ <li><b>Manufacture Date:</b> تاریخ تولید UPS در صورت گزارش.</li>
+</ul>
+
+<h4>گذارها (Transfers)</h4>
+<p>تعداد و زمان آخرین گذار به باتری/بای‌پس ثبت می‌شود. افزایش ناگهانی گذارها معمولاً یعنی برق شهر ناپایدار است یا باتری مشکل دارد.</p>
+
+<h4>زنگ هشدار (Beeper)</h4>
+<p>وضعیت زنگ UPS نمایش داده و با دکمه‌های Enable/Disable/Mute کنترل می‌شود (نیاز به نقش مجاز). خاموش کردن زنگ، هشدارهای صوتی UPS را متوقف می‌کند ولی رویدادها همچنان ثبت می‌شوند.</p>
+
+<h4>وقتی UPS قطع است</h4>
+<p>اگر ارتباط با <code>upsd</code> قطع شود، آخرین داده معتبر با برچسب «آخرین داده معتبر» نشان داده می‌شود و صفحه تلاش برای اتصال مجدد را ادامه می‌دهد. بخش <a href="/help/troubleshooting">عیب‌یابی</a> را ببینید.</p>

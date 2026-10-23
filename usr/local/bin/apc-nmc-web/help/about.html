@@ -1,0 +1,31 @@
+<p>صفحه <b>About › System</b> شناسنامه نرم‌افزار و ابزار به‌روزرسانی است.</p>
+
+<h4>جدول اطلاعات</h4>
+<ul>
+ <li><b>Product:</b> UPS Network Management PI — نام محصول.</li>
+ <li><b>Version:</b> نسخه نصب‌شده از <code>/etc/apc-nmc/version</code> خوانده می‌شود.</li>
+ <li><b>App URL / User / Date:</b> آدرس دسترسی، کاربر جاری و زمان رندر صفحه.</li>
+</ul>
+
+<h4>به‌روزرسانی نرم‌افزار (admin)</h4>
+<ul>
+ <li><b>Check for Updates:</b> از مخزن گیت‌هاب آخرین ریلیز را می‌خواند و در صورت وجود نسخه جدیدتر، بنر «Software update available» در همه صفحه‌ها ظاهر می‌شود.</li>
+ <li><b>Apply Update:</b> دانلود + بررسی sha256 + نصب بسته. فرایند در کنسول زنده (Live Log) داخل همان صفحه دیده می‌شود.</li>
+ <li><b>Rollback:</b> بازگرداندن بکاپ گرفته‌شده قبل از آخرین به‌روزرسانی.</li>
+ <li>هنگام به‌روزرسانی، فایل‌های پیش‌فرض جدید با حفظ مقادیر فعلی به <code>nmc.conf</code> اضافه می‌شوند (merge پیش‌فرض‌ها).</li>
+</ul>
+
+<h4>Update Settings (admin)</h4>
+<table>
+ <tr><th>فیلد</th><th>معنی</th></tr>
+ <tr><td>Repo</td><td>مخزن گیت‌هاب برای چک ریلیز</td></tr>
+ <tr><td>Branch / Channel</td><td>کانال به‌روزرسانی (main یا تگ‌های ریلیز)</td></tr>
+ <tr><td>Verify Checksums</td><td>اجبار به تطابق sha256 بسته قبل از نصب</td></tr>
+ <tr><td>Auto-check</td><td>چک خودکار دوره‌ای برای نسخه جدید</td></tr>
+</table>
+
+<h4>API Token (admin)</h4>
+<p>توکن Bearer برای REST API. «Copy» آن را کپی می‌کند، «Generate» توکن جدید می‌سازد (توکن قبلی باطل می‌شود) و «Clear» API را غیرفعال می‌کند. توکن را به کسی جز ادمین ندهید.</p>
+
+<h4>Support Bundle</h4>
+<p>دکمه «Download Support Bundle» فایل <code>support.tgz</code> می‌سازد: نسخه، کانفیگ پاک‌سازی‌شده (بدون رمزها)، رویدادها، وضعیت سرویس‌ها و journal. برای گزارش باگ به توسعه‌دهنده ضمیمه کنید.</p>

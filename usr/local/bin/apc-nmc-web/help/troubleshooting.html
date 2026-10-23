@@ -1,0 +1,38 @@
+<h4>UPS داده نمی‌دهد / «آخرین داده معتبر»</h4>
+<ul>
+ <li>سرویس NUT را چک کنید: <code>systemctl status nut-server</code> و <code>systemctl status apc-nmc-upsdrv</code>.</li>
+ <li>کابل/پورت Modbus یا USB UPS را بررسی کنید؛ <code>upsc myups</code> باید متغیرها را برگرداند.</li>
+ <li>اگر UPS جدید است، نام آن در <code>[ups] name</code> در <code>nmc.conf</code> باید با <code>ups.conf</code> یکی باشد.</li>
+</ul>
+
+<h4>ریست‌های خودکار مکرر</h4>
+<p>واچ‌داگ شبکه (<code>net-watchdog</code>) وقتی دروازه و اینترنت هر دو ناپایدار باشند دستگاه را ریست می‌کند. اگر ریست‌های عجیب دارید Event Log را ببینید و اتصال شبکه را چک کنید — حداکثر ۳ ریست در هر قطعی پیوسته انجام می‌شود.</p>
+
+<h4>به UI نمی‌رسم</h4>
+<ul>
+ <li>اگر روی WiFi بودید و رادیو را غیرفعال کرده‌اید، از Ethernet وصل شوید و در System › WiFi Setup › Wireless Hardware دوباره Enable و Reboot کنید.</li>
+ <li>پورت 443/80 را در فایروال چک کنید.</li>
+ <li><code>systemctl status apc-nmc-web</code> و journal آن را ببینید.</li>
+</ul>
+
+<h4>به‌روزرسانی ناموفق</h4>
+<ul>
+ <li>در About › System کنسول زنده لاگ خطا را نشان می‌دهد؛ معمولاً مشکل شبکه/گیت‌هاب یا sha256 است.</li>
+ <li>با «Rollback» به نسخه قبلی برگردید؛ بکاپ‌ها در <code>/var/backups/apc-nmc/</code> نگهداری می‌شوند.</li>
+</ul>
+
+<h4>اعلان‌ها نمی‌رسند</h4>
+<ul>
+ <li>از دکمه Test هر کانال استفاده کنید؛ خطای دقیق در Event Log ثبت می‌شود.</li>
+ <li>برای SMTP پورت/TLS و احراز هویت را چک کنید؛ برای webhook URL و کد پاسخ سرور را.</li>
+ <li>سطح حداقل (Minimum Severity) را پایین‌تر بیاورید — شاید رویداد فیلتر شده باشد.</li>
+</ul>
+
+<h4>Modbus/MQTT کار نمی‌کند</h4>
+<ul>
+ <li>Modbus: سرویس را در System › Services فعال کنید و پورت را در فایروال باز کنید؛ Unit ID کلاینت را چک کنید.</li>
+ <li>MQTT: با «Save &amp; Test» اتصال را آزمایش کنید؛ خطای اتصال/TLS/احراز در همان کارت و Event Log دیده می‌شود.</li>
+</ul>
+
+<h4>دیباگ بیشتر</h4>
+<p>از About › System دکمه «Download Support Bundle» یک فایل tar.gz با کانفیگ پاک‌سازی‌شده + journal + وضعیت سرویس‌ها می‌دهد — برای گزارش مشکل به توسعه‌دهنده ایده‌آل است.</p>

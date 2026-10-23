@@ -1219,3 +1219,28 @@ select,
     padding: 0
   }
 }
+
+/* ------- Help / documentation module ------- */
+.helpwrap{display:flex;gap:0;min-height:300px}
+.helptoc{flex:0 0 210px;border-inline-end:1px solid var(--line);padding:10px 0}
+.helptoc a{display:block;padding:7px 18px;color:var(--mut);font-size:13px;border-inline-start:3px solid transparent}
+.helptoc a span{display:block;font-size:11px;opacity:.75}
+.helptoc a:hover{background:var(--surface2);color:var(--apc-dk,#1d8630)}
+.helptoc a.here{border-inline-start-color:var(--apc,#3dcd58);color:var(--apc-dk,#1d8630);font-weight:600;background:var(--surface2)}
+.helpbody{flex:1;min-width:0;padding:14px 22px;font-size:13.5px;line-height:1.9}
+.helpbody h2{margin:0 0 10px;font-size:19px}
+.helpbody h4{margin:18px 0 6px;font-size:14.5px}
+.helpbody p{margin:6px 0}
+.helpbody ul,.helpbody ol{margin:6px 0;padding-inline-start:22px}
+.helpbody li{margin:3px 0}
+.helpbody table{width:100%;border-collapse:collapse;margin:8px 0;font-size:12.5px}
+.helpbody th,.helpbody td{border:1px solid var(--line);padding:5px 9px;text-align:start}
+.helpbody th{background:var(--surface2)}
+.helpbody code{background:var(--surface2);border:1px solid var(--line);border-radius:4px;padding:0 5px;font-size:12px}
+.helpbody .h-kbd{background:var(--surface2);border:1px solid var(--line);border-radius:4px;padding:0 6px;font-size:12px}
+.helplink{margin-top:18px;padding-top:10px;border-top:1px dashed var(--line);font-size:12.5px}
+@media(max-width:900px){.helpwrap{flex-direction:column}.helptoc{flex:none;border-inline-end:0;border-bottom:1px solid var(--line)}}
+
+/* Inline "?" tooltip badge next to labels */
+.tip{display:inline-block;width:14px;height:14px;line-height:14px;font-size:10px;font-weight:700;text-align:center;border-radius:50%;background:var(--mut);color:var(--surface);cursor:help;vertical-align:2px;margin-inline-start:4px;opacity:.75}
+.tip:hover,.tip:focus{opacity:1}

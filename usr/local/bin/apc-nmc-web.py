@@ -1854,6 +1854,7 @@ _SVG = {
     "tests": '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2v7.5L4.5 20a2 2 0 0 0 1.8 3h11.4a2 2 0 0 0 1.8-3L14 9.5V2"/><path d="M8.5 2h7"/><path d="M7 16h10"/></svg>',
     "logs": '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>',
     "about": '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>',
+    "help": '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 2.4-3 4"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
 }
 
 NAV = [
@@ -1871,6 +1872,29 @@ NAV = [
     ("About", "/about/system", "about",
      [("System", "/about/system"), ("Network", "/about/network"),
       ("Host", "/about/host"), ("UPS Variables", "/about/nut")]),
+    ("Help", "/help", "help", [("Documentation", "/help")]),
+]
+
+
+# Help topics: slug -> (title, blurb). Content lives as HTML fragments
+# in apc-nmc-web/help/<slug>.html (inlined by _asset).
+HELP_TOPICS = [
+    ("index", "Getting Around", "Layout, navigation, live data"),
+    ("home", "Home Dashboard", "Tiles, alarms, recent events"),
+    ("status", "UPS Status", "Every status field explained"),
+    ("control", "UPS Control & Outlets", "Safe shutdown, beeper, outlet groups"),
+    ("tests", "Diagnostics & Scheduling", "Self-test, calibration, schedules"),
+    ("config-ups", "Configuration: UPS", "Thresholds and identity settings"),
+    ("config-notify", "Configuration: Notifications", "Every channel, routing matrix"),
+    ("config-system", "Configuration: System", "Users, RADIUS, services, firewall, WiFi"),
+    ("security", "Security & Backup", "Passwords, sessions, backup/restore"),
+    ("logs", "Event & Data Logs", "Filtering, export, energy stats"),
+    ("network", "About: Network & Host", "Interface info, Pi health, NUT vars"),
+    ("about", "About, Updates & Support", "Versions, updates, API token, bundle"),
+    ("api", "API & Integrations", "JSON API, metrics, MQTT, Modbus, SNMP"),
+    ("roles", "User Roles", "The four access tiers"),
+    ("troubleshooting", "Troubleshooting", "Common problems and fixes"),
+    ("glossary", "Glossary", "Status codes and terms"),
 ]
 
 
@@ -1910,7 +1934,44 @@ def _active_section(path):
     for name, link, icon, sub in NAV:
         if path in [link] + [u for _, u in sub]:
             return name
+        if any(path.startswith(u + "/") for u in [link] + [x for _, x in sub]):
+            return name
     return ""
+
+
+def tip(text):
+    """Inline '?' help badge; tooltip text appears on hover/focus."""
+    return ('<span class="tip" tabindex="0" title="%s" '
+            'aria-label="%s">?</span>' % (esc(text), esc(text)))
+
+
+def pg_help(d, slug):
+    slugs = [s for s, _, _ in HELP_TOPICS]
+    if slug not in slugs:
+        slug = "index"
+    toc = "".join(
+        '<a href="/help/%s"%s>%s<span>%s</span></a>'
+        % (s, ' class="here" aria-current="page"' if s == slug else "",
+           esc(t), esc(b))
+        for s, t, b in HELP_TOPICS)
+    body = _asset("help/%s.html" % slug)
+    if not body:
+        body = ('<p class="note">This help topic is missing or not yet '
+                'written.</p>')
+    titles = {s: t for s, t, _ in HELP_TOPICS}
+    nxt = slugs[slugs.index(slug) + 1] if slug != slugs[-1] else ""
+    nxtlink = ('<p class="helplink">Next: <a href="/help/%s">%s</a></p>'
+               % (nxt, esc(titles[nxt]))) if nxt else ""
+    card = """
+<div class="card help">
+ <div class="card-head"><h3>Documentation</h3></div>
+ <div class="helpwrap">
+  <div class="helptoc">%s</div>
+  <div class="helpbody"><h2>%s</h2>%s%s</div>
+ </div>
+</div>
+""" % (toc, esc(titles[slug]), body, nxtlink)
+    return card
 
 
 def csrf_input(d):
@@ -2087,21 +2148,27 @@ def pg_home(d):
                cls=rt_cls, vid="battery.runtime",
                tip="Estimated runtime at current load")
         + (tile("Load", "%g %%" % loadp, "of capacity", bar=loadp,
-                vid="ups.load") if live and loadp is not None else "")
+                vid="ups.load",
+                tip="Share of the UPS rated capacity being drawn")
+           if live and loadp is not None else "")
         + (tile("Output", "%g W" % watts,
-                "%s VA" % d.get("ups.power", "?"), vid="ups.realpower")
+                "%s VA" % d.get("ups.power", "?"), vid="ups.realpower",
+                tip="Real power drawn now (W); apparent power in VA")
            if live and watts is not None else "")
         + (tile("Input", "%g V" % num(d, "input.voltage", 0),
                 "%s Hz" % d.get("input.frequency", "?"),
-                vid="input.voltage")
+                vid="input.voltage",
+                tip="Utility mains voltage/frequency at the UPS input")
            if live and "input.voltage" in d else "")
         + (tile("Output V", "%g V" % num(d, "output.voltage", 0),
                 "%s Hz" % d.get("output.frequency", "?"),
-                vid="output.voltage")
+                vid="output.voltage",
+                tip="Voltage/frequency the UPS feeds to the load")
            if live and "output.voltage" in d else "")
         + (tile("Battery Temp", "%g \u00b0C"
                 % num(d, "battery.temperature", 0),
-                "internal", vid="battery.temperature")
+                "internal", vid="battery.temperature",
+                tip="Internal UPS temperature — high values shorten battery life")
            if live and "battery.temperature" in d else "")
     )
     return """<h1 class="page">Home</h1>
@@ -2125,8 +2192,51 @@ def pg_home(d):
                 fr["hs"], fr["hp"], fr["ht"], fr["he"], _asset("home.js"))
 
 
+# Tooltips for kv() display rows, keyed by the label text. Applies to
+# status/about/log tables without touching each call site.
+_KV_TIPS = {
+    "Last Battery Transfer": "Timestamp of the most recent switch to battery or bypass",
+    "Battery Charge": "Remaining battery capacity as reported by the UPS",
+    "Runtime Remaining": "Estimated battery runtime at the current load",
+    "Battery Voltage": "Present battery terminal voltage",
+    "Battery Temperature": "Internal battery temperature — heat shortens battery life",
+    "Nominal Battery Voltage": "Rated battery pack voltage",
+    "Battery Replacement": "Whether the UPS flags the battery for replacement (RB)",
+    "Battery Install Date": "Recorded install/replace date — reset with 'Battery Replaced'",
+    "Next Battery Maintenance": "Suggested next battery service date",
+    "Battery Age": "Age since the recorded install/replace date",
+    "UPS Alarm": "Active alarm conditions reported by the UPS",
+    "Audible Alarm": "State of the UPS beeper",
+    "Transfers to Battery": "How many times the UPS has switched to battery",
+    "Total Time on Battery": "Cumulative time spent running on battery",
+    "Average Outage": "Mean duration of recorded outages",
+    "Longest Outage": "Longest single recorded outage",
+    "Input Voltage": "Utility mains voltage at the UPS input",
+    "Input Frequency": "Utility mains frequency in Hz",
+    "Transfer Range": "Input voltage band; outside it the UPS goes on battery",
+    "Last Transfer Reason": "Why the UPS last switched to battery",
+    "Output Voltage": "Voltage the UPS feeds to the load",
+    "Output Frequency": "Output frequency in Hz",
+    "Output Load": "Percent of rated capacity being drawn",
+    "Output VA": "Apparent power drawn (volt-amperes)",
+    "Output Watts": "Real power drawn (watts)",
+    "Load Current": "Output current in amps",
+    "Output Efficiency": "Share of input power delivered to the load",
+    "Output Energy Usage": "Cumulative energy delivered by the UPS",
+    "Internal Temperature": "UPS internal temperature",
+    "Last Test Result": "Result of the most recent battery self-test",
+    "Last Test Date": "When the last self-test ran",
+    "Diagnostic Schedule": "Configured weekly self-test schedule",
+    "Last Calibration Date": "When the last runtime calibration ran",
+    "Calibration Status": "Whether runtime calibration is currently running",
+}
+
+
 def kv(label, val):
-    return '<tr><td class="lbl">%s</td><td>%s</td></tr>' % (esc(label), val)
+    t = _KV_TIPS.get(label)
+    badge = ('<span class="tip" title="%s">?</span>' % esc(t)) if t else ""
+    return ('<tr><td class="lbl">%s%s</td><td>%s</td></tr>'
+            % (esc(label), badge, val))
 
 
 def _v(d, key, fmt="%s"):
@@ -2306,8 +2416,8 @@ available for your user role.</p>
 <form method="post" action="/control/ups">
 %s
 %s
-<label class="f" style="color:#666"><input type="checkbox" name="pcns" value="1"> Signal PowerChute Network Shutdown Clients</label>
-<label class="f"><input type="checkbox" name="skipdel" value="1"> Skip outlet off delays</label>%s
+<label class="f" style="color:#666"><input type="checkbox" name="pcns" value="1"> Signal PowerChute Network Shutdown Clients<span class="tip" title="Tell connected PCNS clients to shut their hosts down before the UPS powers off">?</span></label>
+<label class="f"><input type="checkbox" name="skipdel" value="1"> Skip outlet off delays<span class="tip" title="Ignore configured outlet shutdown delays — cuts power sooner; use only when needed">?</span></label>%s
 <div style="margin-top:14px">
 <button class="btn" type="submit">Next &#187;</button>
 <a class="btn sec" href="/home">Cancel</a></div>
@@ -2442,7 +2552,7 @@ def pg_outlets(d, msg: "str | tuple" = ""):
 <div class="pad">
 <form method="post" action="/config/outlets">%s
 <table class="ev"><tr><th class="lbl" style="width:180px">Group</th><th>Name</th>
-<th>Shutdown delay s</th><th>Reboot delay s</th><th>Power-on delay s</th></tr>
+<th>Shutdown delay s<span class="tip" title="Wait before cutting this group's power on shutdown">?</span></th><th>Reboot delay s<span class="tip" title="Off-time when this group is cycled">?</span></th><th>Power-on delay s<span class="tip" title="Wait before restoring power — staggers inrush across groups">?</span></th></tr>
 %s</table>
 <div style="margin-top:14px"><button class="btn">Apply</button></div>
 </form></div></div>""" % (csrf_input(d), cfg_rows))
@@ -2557,11 +2667,11 @@ def pg_tests(d, msg: "str | tuple" = ""):
         smode = cfg("schedule", "shutdown_mode", "return")
         sched = """<div class="card"><h3>Scheduling</h3><div class="pad">
 <form method="post" action="/test/schedule"><table class="kv">
-<tr><td class="lbl">Weekly Self-Test</td><td>%s at %s</td></tr>
+<tr><td class="lbl">Weekly Self-Test<span class="tip" title="Run a battery self-test automatically on this day/hour (server local time)">?</span></td><td>%s at %s</td></tr>
 </table><h4 style="margin:18px 0 8px">Scheduled UPS Power-Off</h4>
 <table class="kv">
-<tr><td class="lbl">When</td><td>%s at %s</td></tr>
-<tr><td class="lbl">After Power-Off</td><td><select name="sd_mode">%s</select></td></tr>
+<tr><td class="lbl">When<span class="tip" title="Day and hour of the scheduled UPS power-off — once per week">?</span></td><td>%s at %s</td></tr>
+<tr><td class="lbl">After Power-Off<span class="tip" title="Return when power is restored vs. stay off until manually restarted">?</span></td><td><select name="sd_mode">%s</select></td></tr>
 </table><p class="note" style="margin-top:8px">Fires once per matching
 day. "Return when power is restored" sends shutdown.return; "stay off"
 sends shutdown.stayoff &mdash; the UPS then needs a manual restart.</p>
@@ -2718,18 +2828,18 @@ secrets &mdash; they display only a configured flag; leave blank to keep
 the stored value.</p>
 <form method="post" action="/config/notify"><table class="kv">
 %s
-<tr><td class="lbl">Minimum Severity</td><td><select name="nsev">%s</select></td></tr>
-<tr><td class="lbl">Syslog Target</td><td><input name="nsyslog" maxlength="64" value="%s" placeholder="local, host[:514], tcp:// or tls://host"></td></tr>
-<tr><td class="lbl"></td><td><label class="f" style="font-weight:normal"><input type="checkbox" name="nsysinsecure"%s> TLS: skip certificate verification</label></td></tr>
+<tr><td class="lbl">Minimum Severity<span class="tip" title="Only events at or above this level are sent out; lower ones are only logged">?</span></td><td><select name="nsev">%s</select></td></tr>
+<tr><td class="lbl">Syslog Target<span class="tip" title="'local' logs to this host, host[:514] uses UDP, tcp://host:port, tls://host:port for TLS">?</span></td><td><input name="nsyslog" maxlength="64" value="%s" placeholder="local, host[:514], tcp:// or tls://host"></td></tr>
+<tr><td class="lbl"></td><td><label class="f" style="font-weight:normal"><input type="checkbox" name="nsysinsecure"%s> TLS: skip certificate verification<span class="tip" title="Accept invalid/self-signed certificates — for testing only">?</span></label></td></tr>
 %s%s%s%s
 <tr><td colspan="2"><b>E-mail (SMTP)</b></td></tr>
-<tr><td class="lbl">SMTP Host</td><td><input name="nsmtphost" maxlength="64" value="%s" placeholder="mail.example.com"></td></tr>
-<tr><td class="lbl">SMTP Port</td><td><input name="nsmtpport" type="number" min="1" max="65535" value="%s" placeholder="auto"></td></tr>
-<tr><td class="lbl">SMTP Security</td><td><select name="nsmtptls">%s</select></td></tr>
-<tr><td class="lbl">SMTP User</td><td><input name="nsmtpuser" maxlength="64" value="%s" autocomplete="off"></td></tr>
+<tr><td class="lbl">SMTP Host<span class="tip" title="Outgoing mail server, e.g. smtp.gmail.com or your internal relay">?</span></td><td><input name="nsmtphost" maxlength="64" value="%s" placeholder="mail.example.com"></td></tr>
+<tr><td class="lbl">SMTP Port<span class="tip" title="Leave empty for auto: 465 with SSL, 587 with STARTTLS, 25 plain">?</span></td><td><input name="nsmtpport" type="number" min="1" max="65535" value="%s" placeholder="auto"></td></tr>
+<tr><td class="lbl">SMTP Security<span class="tip" title="None, STARTTLS (upgrade after connect) or SSL/TLS (encrypted from the start)">?</span></td><td><select name="nsmtptls">%s</select></td></tr>
+<tr><td class="lbl">SMTP User<span class="tip" title="Login name for authenticated SMTP — often the full email address">?</span></td><td><input name="nsmtpuser" maxlength="64" value="%s" autocomplete="off"></td></tr>
 %s
-<tr><td class="lbl">Mail From</td><td><input name="nsmtpfrom" maxlength="64" value="%s" placeholder="ups@example.com"></td></tr>
-<tr><td class="lbl">Mail To</td><td><input name="nsmtpto" maxlength="128" value="%s" placeholder="admin@example.com, oncall@example.com"></td></tr>
+<tr><td class="lbl">Mail From<span class="tip" title="Sender address shown on alert emails">?</span></td><td><input name="nsmtpfrom" maxlength="64" value="%s" placeholder="ups@example.com"></td></tr>
+<tr><td class="lbl">Mail To<span class="tip" title="Recipients — separate multiple addresses with commas">?</span></td><td><input name="nsmtpto" maxlength="128" value="%s" placeholder="admin@example.com, oncall@example.com"></td></tr>
 <tr><td colspan="2"><b>Alert routing</b><br><span class="mut">Which
 channels fire per trigger type. Unchecked channels are skipped for that
 trigger; a fully unchecked row alerts nowhere.</span></td></tr>
@@ -2749,7 +2859,9 @@ changes first.</p></div></div>""" % (
               "https://hooks.example.com/..."),
         _secf("Discord Webhook", "ndiscord", "discord",
               "https://discord.com/api/webhooks/..."),
-        ('<tr><td class="lbl">Discord Ping</td><td>'
+        ('<tr><td class="lbl">Discord Ping<span class="tip" '
+         'title="Mention sent only with critical alerts — @here, '
+         '&lt;@userid&gt; or &lt;@&amp;roleid&gt;">?</span></td><td>'
          '<input name="ndismention" maxlength="64" value="%s" '
          'placeholder="@here or &lt;@&amp;roleid&gt; — crit only">'
          '</td></tr>' % esc(nc["discord_mention"])),
@@ -2791,23 +2903,23 @@ nmc.conf and card state, then restarts this interface.</p>
 <div class="card"><h3>General</h3><div class="pad">
 <form method="post" action="/config/ups"><table class="kv">
 %s
-<tr><td class="lbl">UPS Name</td><td><input name="ups_name" maxlength="32" value="%s"></td></tr>
-<tr><td class="lbl">UPS Identifier (ups.id)</td><td><input name="ups_id" maxlength="16" value="%s"></td></tr>
-<tr><td class="lbl">Location</td><td><input name="location" maxlength="64" value="%s"></td></tr>
-<tr><td class="lbl">Contact</td><td><input name="contact" maxlength="64" value="%s"></td></tr>
-<tr><td class="lbl">Audible Alarm</td><td><select name="alarm">%s</select></td></tr>
-<tr><td class="lbl">Sensitivity</td><td><select name="sens">%s</select></td></tr>
-<tr><td class="lbl">Rated Output Voltage</td><td><input name="ratedv" type="number" min="100" max="300" value="%s"></td></tr>
+<tr><td class="lbl">UPS Name<span class="tip" title="Logical UPS name in NUT — must match the entry in ups.conf (usually 'myups')">?</span></td><td><input name="ups_name" maxlength="32" value="%s"></td></tr>
+<tr><td class="lbl">UPS Identifier (ups.id)<span class="tip" title="Identifier reported to clients as ups.id — informational">?</span></td><td><input name="ups_id" maxlength="16" value="%s"></td></tr>
+<tr><td class="lbl">Location<span class="tip" title="Physical location; shown on the dashboard and included in notifications">?</span></td><td><input name="location" maxlength="64" value="%s"></td></tr>
+<tr><td class="lbl">Contact<span class="tip" title="Responsible person; included in notification messages">?</span></td><td><input name="contact" maxlength="64" value="%s"></td></tr>
+<tr><td class="lbl">Audible Alarm<span class="tip" title="Enable/disable the UPS beeper that sounds on power events">?</span></td><td><select name="alarm">%s</select></td></tr>
+<tr><td class="lbl">Sensitivity<span class="tip" title="How readily the UPS transfers to battery on input fluctuation — higher means more transfers">?</span></td><td><select name="sens">%s</select></td></tr>
+<tr><td class="lbl">Rated Output Voltage<span class="tip" title="Nominal output voltage the UPS regulates (e.g. 230 V)">?</span></td><td><input name="ratedv" type="number" min="100" max="300" value="%s"></td></tr>
 </table>
 <h3 style="margin:18px 0 8px;font-size:14px">Power thresholds</h3>
 <table class="kv">
-<tr><td class="lbl">Low Battery Runtime (s)</td><td><input name="lowrt" type="number" min="0" max="36000" value="%s"></td></tr>
-<tr><td class="lbl">Shutdown Delay (s)</td><td><input name="sddel" type="number" min="0" max="3600" value="%s"></td></tr>
-<tr><td class="lbl">Restart Delay (s)</td><td><input name="rdel" type="number" min="0" max="3600" value="%s"></td></tr>
-<tr><td class="lbl">Reboot Delay (s)</td><td><input name="rbdel" type="number" min="0" max="3600" value="%s"></td></tr>
-<tr><td class="lbl">Low Battery Charge (%%)</td><td><input name="lowchg" type="number" min="0" max="100" value="%s"></td></tr>
-<tr><td class="lbl">Transfer Voltage Low (VAC)</td><td><input name="trlow" type="number" min="150" max="300" value="%s"></td></tr>
-<tr><td class="lbl">Transfer Voltage High (VAC)</td><td><input name="trhigh" type="number" min="150" max="300" value="%s"></td></tr>
+<tr><td class="lbl">Low Battery Runtime (s)<span class="tip" title="When remaining battery runtime drops below this, the UPS raises LB (low battery)">?</span></td><td><input name="lowrt" type="number" min="0" max="36000" value="%s"></td></tr>
+<tr><td class="lbl">Shutdown Delay (s)<span class="tip" title="Grace period between the shutdown command and the actual output cut — lets servers power off cleanly">?</span></td><td><input name="sddel" type="number" min="0" max="3600" value="%s"></td></tr>
+<tr><td class="lbl">Restart Delay (s)<span class="tip" title="Wait before output returns after mains power is restored">?</span></td><td><input name="rdel" type="number" min="0" max="3600" value="%s"></td></tr>
+<tr><td class="lbl">Reboot Delay (s)<span class="tip" title="How long output stays off during a reboot cycle">?</span></td><td><input name="rbdel" type="number" min="0" max="3600" value="%s"></td></tr>
+<tr><td class="lbl">Low Battery Charge (%%)<span class="tip" title="Charge level at which the low-battery warning is raised">?</span></td><td><input name="lowchg" type="number" min="0" max="100" value="%s"></td></tr>
+<tr><td class="lbl">Transfer Voltage Low (VAC)<span class="tip" title="Below this input voltage the UPS transfers to battery">?</span></td><td><input name="trlow" type="number" min="150" max="300" value="%s"></td></tr>
+<tr><td class="lbl">Transfer Voltage High (VAC)<span class="tip" title="Above this input voltage the UPS transfers to battery">?</span></td><td><input name="trhigh" type="number" min="150" max="300" value="%s"></td></tr>
 </table>
 %s
 </form></div></div>
@@ -2815,8 +2927,8 @@ nmc.conf and card state, then restarts this interface.</p>
 <div class="card"><h3>Change Password</h3><div class="pad">
 <form method="post" action="/config/security"><table class="kv">
 %s
-<tr><td class="lbl">Current Password</td><td><input name="curp" type="password" autocomplete="current-password"></td></tr>
-<tr><td class="lbl">New Password</td><td><input name="newp" type="password" minlength="6" autocomplete="new-password"></td></tr>
+<tr><td class="lbl">Current Password<span class="tip" title="Your own current password — changes your account only">?</span></td><td><input name="curp" type="password" autocomplete="current-password"></td></tr>
+<tr><td class="lbl">New Password<span class="tip" title="Minimum 6 characters; stored as a hash in nmc.conf">?</span></td><td><input name="newp" type="password" minlength="6" autocomplete="new-password"></td></tr>
 <tr><td class="lbl">Confirm New Password</td><td><input name="cfmp" type="password" autocomplete="new-password"></td></tr>
 </table>
 <div style="margin-top:16px"><button class="btn">Change Password</button></div>
@@ -2911,9 +3023,9 @@ def pg_system(d, msg: "str | tuple" = ""):
     if admin:
         addform = """<form method="post" action="/config/users"><table class="kv">
 %s<input type="hidden" name="act" value="add">
-<tr><td class="lbl">User Name</td><td><input name="uname" maxlength="32" required></td></tr>
+<tr><td class="lbl">User Name<span class="tip" title="Login name for the web UI — local account, separate from RADIUS">?</span></td><td><input name="uname" maxlength="32" required></td></tr>
 <tr><td class="lbl">Password</td><td><input name="upass" type="password" minlength="6" autocomplete="new-password" required></td></tr>
-<tr><td class="lbl">Role</td><td>%s</td></tr>
+<tr><td class="lbl">Role<span class="tip" title="Administrator: full access. Device: UPS only. Network: network/services only. Read-Only: view only">?</span></td><td>%s</td></tr>
 </table><div style="margin-top:12px"><button class="btn">Add User</button></div>
 </form>""" % (csrf, sel("urole", "readonly",
                       [(r, r.capitalize()) for r in USER_ROLES]))
@@ -2935,12 +3047,12 @@ Status: <b>%s</b></p>%s</div></div>""" % (
         "enabled" if r_en else "disabled", (
             """<form method="post" action="/config/radius"><table class="kv">
 %s
-<tr><td class="lbl">Enabled</td><td><input type="checkbox" name="r_en"%s></td></tr>
+<tr><td class="lbl">Enabled<span class="tip" title="When on, logins are checked against RADIUS first, then local accounts">?</span></td><td><input type="checkbox" name="r_en"%s></td></tr>
 <tr><td class="lbl">Server</td><td><input name="r_srv" maxlength="64" value="%s" placeholder="radius.example.com"></td></tr>
-<tr><td class="lbl">Port</td><td><input name="r_port" type="number" min="1" max="65535" value="%s"></td></tr>
-<tr><td class="lbl">Shared Secret</td><td>%s</td></tr>
-<tr><td class="lbl">Timeout (s)</td><td><input name="r_to" type="number" min="1" max="30" step="0.5" value="%s"></td></tr>
-<tr><td class="lbl">Assigned Role</td><td>%s</td></tr>
+<tr><td class="lbl">Port<span class="tip" title="RADIUS authentication port — usually 1812">?</span></td><td><input name="r_port" type="number" min="1" max="65535" value="%s"></td></tr>
+<tr><td class="lbl">Shared Secret<span class="tip" title="Secret shared with the RADIUS server — keep it confidential">?</span></td><td>%s</td></tr>
+<tr><td class="lbl">Timeout (s)<span class="tip" title="Seconds to wait for a RADIUS reply before falling back to local auth">?</span></td><td><input name="r_to" type="number" min="1" max="30" step="0.5" value="%s"></td></tr>
+<tr><td class="lbl">Assigned Role<span class="tip" title="Role granted to users who authenticate via RADIUS">?</span></td><td>%s</td></tr>
 </table><div style="margin-top:12px"><button class="btn">Apply</button></div>
 </form>""" % (
             csrf, " checked" if r_en else "",
@@ -2971,11 +3083,11 @@ map (docs/modbus-registers.md) &mdash; status bits as discrete inputs,
 readings as input registers. Status: <b>%s / %s</b></p>
 <form method="post" action="/config/services">
 %s<input type="hidden" name="svc" value="modbus"><table class="kv">
-<tr><td class="lbl">Enabled</td><td><input type="checkbox" name="mb_en"%s></td></tr>
-<tr><td class="lbl">Bind Address</td><td><input name="mb_bind" maxlength="40" value="%s" placeholder="0.0.0.0"></td></tr>
-<tr><td class="lbl">Port</td><td><input name="mb_port" type="number" min="1" max="65535" value="%s"></td></tr>
-<tr><td class="lbl">Unit Identifier</td><td><input name="mb_unit" type="number" min="1" max="247" value="%s"></td></tr>
-<tr><td class="lbl">Write Access</td><td><label class="f" style="font-weight:normal"><input type="checkbox" name="mb_write"%s> allow UPS commands via the command register/coils</label></td></tr>
+<tr><td class="lbl">Enabled<span class="tip" title="Serve UPS registers to BMS/SCADA clients over Modbus TCP">?</span></td><td><input type="checkbox" name="mb_en"%s></td></tr>
+<tr><td class="lbl">Bind Address<span class="tip" title="Local address to listen on — 0.0.0.0 means all interfaces">?</span></td><td><input name="mb_bind" maxlength="40" value="%s" placeholder="0.0.0.0"></td></tr>
+<tr><td class="lbl">Port<span class="tip" title="Modbus TCP port — 502 is the standard; open it in the firewall">?</span></td><td><input name="mb_port" type="number" min="1" max="65535" value="%s"></td></tr>
+<tr><td class="lbl">Unit Identifier<span class="tip" title="Modbus unit/slave ID the client must address — 1..247">?</span></td><td><input name="mb_unit" type="number" min="1" max="247" value="%s"></td></tr>
+<tr><td class="lbl">Write Access</td><td><label class="f" style="font-weight:normal"><input type="checkbox" name="mb_write"%s> allow UPS commands via the command register/coils<span class="tip" title="Lets Modbus clients send UPS commands (tests, shutdown) — enable only on trusted networks">?</span></label></td></tr>
 </table><div style="margin-top:12px"><button class="btn">Apply</button></div>
 </form>
 <h4 style="margin:22px 0 8px">FTP Server</h4>
@@ -2984,7 +3096,7 @@ readings as input registers. Status: <b>%s / %s</b></p>
 Status: <b>%s / %s</b>%s</p>
 <form method="post" action="/config/services">
 %s<input type="hidden" name="svc" value="ftp"><table class="kv">
-<tr><td class="lbl">Enabled</td><td><input type="checkbox" name="ftp_en"%s></td></tr>
+<tr><td class="lbl">Enabled<span class="tip" title="Chrooted vsftpd for file transfer (e.g. pulling config/events) — enable only when needed">?</span></td><td><input type="checkbox" name="ftp_en"%s></td></tr>
 </table><div style="margin-top:12px"><button class="btn">Apply</button></div>
 </form>
 <h4 style="margin:22px 0 8px">MQTT Telemetry</h4>
@@ -2993,15 +3105,15 @@ JSON document to <code>%s/state</code> every interval &mdash; for
 Home Assistant, Node-RED and similar consumers.%s</p>
 <form method="post" action="/config/services">
 %s<input type="hidden" name="svc" value="mqtt"><table class="kv">
-<tr><td class="lbl">Enabled</td><td><input type="checkbox" name="mq_en"%s></td></tr>
-<tr><td class="lbl">Broker Host</td><td><input name="mq_host" maxlength="128" value="%s" placeholder="mqtt.local"></td></tr>
-<tr><td class="lbl">Port</td><td><input name="mq_port" type="number" min="1" max="65535" value="%s"></td></tr>
-<tr><td class="lbl">TLS</td><td><label class="f" style="font-weight:normal"><input type="checkbox" name="mq_tls"%s> use TLS (port 8883)</label>
+<tr><td class="lbl">Enabled<span class="tip" title="Publish UPS state to an MQTT broker periodically">?</span></td><td><input type="checkbox" name="mq_en"%s></td></tr>
+<tr><td class="lbl">Broker Host<span class="tip" title="MQTT broker address, e.g. your Home Assistant or BMS broker">?</span></td><td><input name="mq_host" maxlength="128" value="%s" placeholder="mqtt.local"></td></tr>
+<tr><td class="lbl">Port<span class="tip" title="1883 for plain MQTT, 8883 for TLS">?</span></td><td><input name="mq_port" type="number" min="1" max="65535" value="%s"></td></tr>
+<tr><td class="lbl">TLS</td><td><label class="f" style="font-weight:normal"><input type="checkbox" name="mq_tls"%s> use TLS (port 8883)<span class="tip" title="Encrypt the broker connection — enable for internet-facing brokers">?</span></label>
  <label class="f" style="font-weight:normal"><input type="checkbox" name="mq_insecure"%s> skip certificate verification</label></td></tr>
-<tr><td class="lbl">Username</td><td><input name="mq_user" maxlength="64" value="%s"></td></tr>
-<tr><td class="lbl">Password</td><td><input name="mq_pass" type="password" maxlength="128" value="" placeholder="unchanged" autocomplete="off"></td></tr>
-<tr><td class="lbl">Topic Prefix</td><td><input name="mq_topic" maxlength="96" value="%s" placeholder="apc-nmc/myups"></td></tr>
-<tr><td class="lbl">Interval (s)</td><td><input name="mq_interval" type="number" min="15" max="86400" value="%s"></td></tr>
+<tr><td class="lbl">Username<span class="tip" title="Broker login — leave blank for anonymous brokers">?</span></td><td><input name="mq_user" maxlength="64" value="%s"></td></tr>
+<tr><td class="lbl">Password<span class="tip" title="Broker password — blank keeps the stored value">?</span></td><td><input name="mq_pass" type="password" maxlength="128" value="" placeholder="unchanged" autocomplete="off"></td></tr>
+<tr><td class="lbl">Topic Prefix<span class="tip" title="State JSON is published to &lt;prefix&gt;/state">?</span></td><td><input name="mq_topic" maxlength="96" value="%s" placeholder="apc-nmc/myups"></td></tr>
+<tr><td class="lbl">Interval (s)<span class="tip" title="Seconds between state publishes — 15 to 86400">?</span></td><td><input name="mq_interval" type="number" min="15" max="86400" value="%s"></td></tr>
 </table><div style="margin-top:12px"><button class="btn">Apply</button>
 <button class="btn sec" name="mq_test" value="1" style="margin-left:8px">Save &amp; Test Publish</button></div>
 </form>%s</div></div>""" % (
@@ -3045,10 +3157,10 @@ extra ports to open and, optionally, the only CIDRs allowed to reach
 any service. Status: <b>%s / %s</b></p>
 <form method="post" action="/config/firewall"><table class="kv">
 %s
-<tr><td class="lbl">Enabled</td><td><input type="checkbox" name="fw_en"%s></td></tr>
-<tr><td class="lbl">Extra TCP Ports</td><td><input name="fw_tcp" maxlength="128" value="%s" placeholder="502 3493"></td></tr>
-<tr><td class="lbl">Extra UDP Ports</td><td><input name="fw_udp" maxlength="128" value="%s" placeholder=""></td></tr>
-<tr><td class="lbl">Allowed Sources</td><td><input name="fw_from" maxlength="256" value="%s" placeholder="192.168.1.0/24 10.0.0.5/32 (empty = any)"></td></tr>
+<tr><td class="lbl">Enabled<span class="tip" title="Apply nftables rules — only listed ports stay reachable; be careful not to lock yourself out">?</span></td><td><input type="checkbox" name="fw_en"%s></td></tr>
+<tr><td class="lbl">Extra TCP Ports<span class="tip" title="Additional TCP ports to allow, space-separated (SSH/HTTP/HTTPS/NUT are always open)">?</span></td><td><input name="fw_tcp" maxlength="128" value="%s" placeholder="502 3493"></td></tr>
+<tr><td class="lbl">Extra UDP Ports<span class="tip" title="Additional UDP ports to allow, space-separated">?</span></td><td><input name="fw_udp" maxlength="128" value="%s" placeholder=""></td></tr>
+<tr><td class="lbl">Allowed Sources<span class="tip" title="Restrict access to these CIDR ranges — empty means any source">?</span></td><td><input name="fw_from" maxlength="256" value="%s" placeholder="192.168.1.0/24 10.0.0.5/32 (empty = any)"></td></tr>
 </table><div style="margin-top:12px"><button class="btn">Apply</button></div>
 </form>%s</div></div>""" % (
         fo,
@@ -3074,16 +3186,16 @@ managed switches that demand EAP credentials before allowing traffic
 <b>%s / %s</b></p>
 <form method="post" action="/config/dot1x"><table class="kv">
 %s
-<tr><td class="lbl">Enabled</td><td><input type="checkbox" name="x_en"%s></td></tr>
-<tr><td class="lbl">Interface</td><td>%s</td></tr>
-<tr><td class="lbl">EAP Method</td><td>%s</td></tr>
-<tr><td class="lbl">Identity</td><td><input name="x_id" maxlength="64" value="%s"></td></tr>
-<tr><td class="lbl">Password (PEAP)</td><td>%s</td></tr>
-<tr><td class="lbl">Phase 2</td><td><input name="x_ph2" maxlength="64" value="%s" placeholder="auth=MSCHAPV2"></td></tr>
-<tr><td class="lbl">CA Certificate</td><td><input name="x_ca" maxlength="128" value="%s" placeholder="/etc/apc-nmc/ca/ca.crt"></td></tr>
-<tr><td class="lbl">Client Certificate (TLS)</td><td><input name="x_cc" maxlength="128" value="%s"></td></tr>
-<tr><td class="lbl">Private Key (TLS)</td><td><input name="x_pk" maxlength="128" value="%s"></td></tr>
-<tr><td class="lbl">Key Password</td><td>%s</td></tr>
+<tr><td class="lbl">Enabled<span class="tip" title="Authenticate the Ethernet port on 802.1X-protected switches (not WiFi)">?</span></td><td><input type="checkbox" name="x_en"%s></td></tr>
+<tr><td class="lbl">Interface<span class="tip" title="Wired interface that needs port authentication — usually eth0">?</span></td><td>%s</td></tr>
+<tr><td class="lbl">EAP Method<span class="tip" title="PEAP/TTLS use a password; TLS uses a client certificate">?</span></td><td>%s</td></tr>
+<tr><td class="lbl">Identity<span class="tip" title="Username presented to the authenticator (RADIUS/NAC)">?</span></td><td><input name="x_id" maxlength="64" value="%s"></td></tr>
+<tr><td class="lbl">Password (PEAP)<span class="tip" title="EAP password for PEAP/TTLS — not needed for EAP-TLS">?</span></td><td>%s</td></tr>
+<tr><td class="lbl">Phase 2<span class="tip" title="Inner method for PEAP/TTLS, e.g. auth=MSCHAPV2">?</span></td><td><input name="x_ph2" maxlength="64" value="%s" placeholder="auth=MSCHAPV2"></td></tr>
+<tr><td class="lbl">CA Certificate<span class="tip" title="Path to the CA cert used to verify the authentication server">?</span></td><td><input name="x_ca" maxlength="128" value="%s" placeholder="/etc/apc-nmc/ca/ca.crt"></td></tr>
+<tr><td class="lbl">Client Certificate (TLS)<span class="tip" title="Client cert path — required only for EAP-TLS">?</span></td><td><input name="x_cc" maxlength="128" value="%s"></td></tr>
+<tr><td class="lbl">Private Key (TLS)<span class="tip" title="Client private key path — required only for EAP-TLS">?</span></td><td><input name="x_pk" maxlength="128" value="%s"></td></tr>
+<tr><td class="lbl">Key Password<span class="tip" title="Password protecting the private key, if any">?</span></td><td>%s</td></tr>
 </table><div style="margin-top:12px"><button class="btn">Apply</button></div>
 </form>%s</div></div>""" % (
         xo,
@@ -3142,7 +3254,10 @@ managed switches that demand EAP credentials before allowing traffic
                    '</form>'
                    % (conf, csrf, "hw_enable" if dis else "hw_disable",
                       radio, "Enable" if dis else "Disable"))
-        hrows += ('<tr><td class="lbl">Onboard %s</td><td>%s</td>'
+        hrows += ('<tr><td class="lbl">Onboard %s<span class="tip" '
+                  'title="Boot-level radio switch (dtoverlay) — a reboot is '
+                  'required for changes to take effect">?</span></td>'
+                  '<td>%s</td>'
                   '<td style="text-align:right">%s</td></tr>'
                   % (label, st, btn))
     if hw["cfg"]:
@@ -3185,13 +3300,13 @@ NetworkManager. Radio: <b>%s</b>%s</p>
 <button class="btn sec" type="submit">%s</button></form>%s</div>
 <form method="post" action="/config/wifi"><table class="kv">
 %s<input type="hidden" name="act" value="connect">
-<tr><td class="lbl">Interface</td><td>%s</td></tr>
-<tr><td class="lbl">Network (SSID)</td><td>
+<tr><td class="lbl">Interface<span class="tip" title="Wireless interface — usually wlan0">?</span></td><td>%s</td></tr>
+<tr><td class="lbl">Network (SSID)<span class="tip" title="WiFi network to join — use Scan to pick from detected networks">?</span></td><td>
 <input name="w_ssid" id="wssid" list="wlist" maxlength="32" required>
 <datalist id="wlist"></datalist>
 <button class="btn sec" type="button" id="wscanbtn">Scan</button>
 <span class="note" id="wscanmsg"></span></td></tr>
-<tr><td class="lbl">Password</td><td><input name="w_psk" type="password" autocomplete="off" maxlength="64" placeholder="blank for open networks"></td></tr>
+<tr><td class="lbl">Password<span class="tip" title="WPA passphrase — leave blank only for open networks">?</span></td><td><input name="w_psk" type="password" autocomplete="off" maxlength="64" placeholder="blank for open networks"></td></tr>
 </table><div style="margin-top:12px"><button class="btn" type="submit">Connect</button></div></form>
 <script>
 (function(){var b=document.getElementById('wscanbtn');
@@ -3267,7 +3382,7 @@ def pg_events(d, msg=""):
 <label class="f" style="padding:0"><input type="checkbox" class="evf" value="warn" checked> warning</label>
 <label class="f" style="padding:0"><input type="checkbox" class="evf" value="info" checked> info</label>
 <input type="text" id="evq" placeholder="Filter events&hellip;"
- style="width:220px"></div>
+ style="width:220px" title="Filter the table by event text — client-side, instant"></div>
 <table class="ev" id="evtable" data-pg-global="#evq" data-pg-sev>
 <tr><th style="width:20px"></th>
 <th style="width:105px">Date</th><th style="width:85px">Time</th>
@@ -3316,11 +3431,11 @@ def pg_data():
     return """<h1 class="page">Data Log</h1>
 %s<div class="card"><h3>Trend</h3><div class="pad">
 <div id="dlranges" style="margin-bottom:8px">
-<button class="btn sec dlrange act" data-h="24">24 h</button>
+<button class="btn sec dlrange act" data-h="24" title="Last 24 hours">24 h</button>
 <button class="btn sec dlrange" data-h="168"
- style="margin-left:6px">7 days</button>
+ style="margin-left:6px" title="Last 7 days">7 days</button>
 <button class="btn sec dlrange" data-h="0"
- style="margin-left:6px">All</button></div>
+ style="margin-left:6px" title="Full retained history">All</button></div>
 <canvas id="dlc" width="1000" height="260"
  style="width:100%%;height:auto"></canvas>
 <div class="note" id="dllbl" style="margin-top:6px"></div>
@@ -3559,13 +3674,13 @@ def pg_about(d, msg: "str | tuple" = ""):
                     if utok else "")
         updcfg = """<div class="card"><h3>Update Settings</h3><div class="pad">
 <form method="post" action="/about/update/settings"><table class="kv">
-<tr><td class="lbl">Repository</td><td><input name="urepo" maxlength="64"
+<tr><td class="lbl">Repository<span class="tip" title="GitHub repo checked for releases, in owner/name form">?</span></td><td><input name="urepo" maxlength="64"
  value="%s" placeholder="owner/name"></td></tr>
-<tr><td class="lbl">Branch</td><td><input name="ubranch" maxlength="64"
+<tr><td class="lbl">Branch<span class="tip" title="Branch used when the channel tracks a branch instead of tags">?</span></td><td><input name="ubranch" maxlength="64"
  value="%s"></td></tr>
-<tr><td class="lbl">Channel</td><td><select name="uchannel">%s</select></td></tr>
-<tr><td class="lbl">Verify</td><td><select name="uverify">%s</select></td></tr>
-<tr><td class="lbl">Daily auto-check</td><td>
+<tr><td class="lbl">Channel<span class="tip" title="Which release stream to track (stable tags vs. branch builds)">?</span></td><td><select name="uchannel">%s</select></td></tr>
+<tr><td class="lbl">Verify<span class="tip" title="Require sha256 (and signature if available) before installing an update">?</span></td><td><select name="uverify">%s</select></td></tr>
+<tr><td class="lbl">Daily auto-check<span class="tip" title="Check GitHub once a day and show the update banner when a new release exists">?</span></td><td>
  <input type="checkbox" name="uautocheck" value="1"%s></td></tr>
 </table>
 <div style="margin-top:14px">%s
@@ -3574,7 +3689,7 @@ def pg_about(d, msg: "str | tuple" = ""):
 <h3 style="margin:20px 0 8px;font-size:14px">API Token</h3>
 <p style="margin:0 0 10px;color:var(--mut)">Read-only bearer token for
 /metrics and /api/v1/* — send as <code>Authorization: Bearer</code>.</p>
-<table class="kv"><tr><td class="lbl">Token</td><td>%s</td></tr></table>
+<table class="kv"><tr><td class="lbl">Token<span class="tip" title="Full API access — keep it secret; Generate invalidates the old one">?</span></td><td>%s</td></tr></table>
 <div style="margin-top:12px">
 <form method="post" action="/about/update/token" style="display:inline"
  onsubmit="return confirm('%s')">%s
@@ -5544,6 +5659,10 @@ class H(BaseHTTPRequestHandler):
             elif p == "/about/nut":
                 b = pg_nut(d)
                 section, leaf = "About", "UPS Variables"
+            elif p == "/help" or p.startswith("/help/"):
+                slug = p.split("/", 2)[2] if p.count("/") >= 2 else ""
+                b = pg_help(d, slug)
+                section, leaf = "Help", "Documentation"
             else:
                 return self._page(404, pg_404(), d, "", "Status", "")
         except Exception:

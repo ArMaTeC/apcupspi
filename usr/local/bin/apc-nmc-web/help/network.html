@@ -1,0 +1,21 @@
+<h4>About › Network</h4>
+<p>وضعیت شبکه کارت را نشان می‌دهد:</p>
+<ul>
+ <li><b>Interface / IP / MAC:</b> آدرس‌های IPv4 هر اینترفیس (eth0، wlan0…) و آدرس فیزیکی.</li>
+ <li><b>Gateway / DNS:</b> دروازه پیش‌فرض و سرورهای DNS فعلی.</li>
+ <li><b>Hostname:</b> نام ماشین که در اعلان‌ها و SNMP sysName استفاده می‌شود.</li>
+</ul>
+<p>برای تغییر IP/Hostname از ابزار سیستم (<code>nmcli</code> یا NetworkManager) استفاده کنید؛ این صفحه فقط‌خواندنی است.</p>
+
+<h4>About › Host</h4>
+<p>سلامت خود Raspberry Pi را مانیتور می‌کند:</p>
+<ul>
+ <li><b>CPU Temp:</b> دمای SoC؛ بالای ~۸۰° باعث throttle و ریست‌های احتمالی می‌شود.</li>
+ <li><b>Load / Memory / Disk:</b> بار سیستم، حافظه مصرفی و فضای آزاد کارت SD.</li>
+ <li><b>Uptime:</b> مدت روشن بودن از آخرین ریست.</li>
+ <li><b>Services:</b> وضعیت سرویس‌های اصلی (web, snmpd, modbus, dot1x, firewall, wifi-hw) — سبز=فعال.</li>
+</ul>
+
+<h4>About › UPS Variables</h4>
+<p>دامپ خام همه متغیرهای گزارش‌شده توسط NUT (<code>ups.*</code>, <code>battery.*</code>, <code>input.*</code>, <code>output.*</code>, <code>device.*</code>…) برای دیباگ و پشتیبانی. ستون Description توضیح هر متغیر را می‌دهد.</p>
+<p>این جدول همان چیزی است که API و SNMP هم از آن استفاده می‌کنند؛ اگر متغیری اینجا نیست یعنی UPS آن را گزارش نمی‌کند.</p>

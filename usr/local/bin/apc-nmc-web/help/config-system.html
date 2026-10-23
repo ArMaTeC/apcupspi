@@ -1,0 +1,41 @@
+<p>صفحه <b>Configuration › System</b> بخش‌های مدیریتی سطح سیستم را یکجا دارد. برخی کارت‌ها فقط برای Administrator فعال‌اند و برای Read-Only به‌صورت خاکستری (disabled) دیده می‌شوند.</p>
+
+<h4>مدیریت کاربران</h4>
+<ul>
+ <li>افزودن/ویرایش/حذف کاربران محلی (علاوه بر حساب پیش‌فرض <code>apc</code>).</li>
+ <li>برای هر کاربر یکی از چهار نقش Administrator، Device، Network یا Read-Only انتخاب می‌شود — جزئیات در <a href="/help/roles">نقش‌ها</a>.</li>
+ <li>تنظیم <b>Session Timeout</b> مدت اعتبار نشست را مشخص می‌کند.</li>
+</ul>
+
+<h4>احراز هویت RADIUS</h4>
+<table>
+ <tr><th>فیلد</th><th>معنی</th></tr>
+ <tr><td>Server / Port</td><td>آدرس و پورت RADIUS (پیش‌فرض 1812)</td></tr>
+ <tr><td>Shared Secret</td><td>راز مشترک با سرور RADIUS</td></tr>
+ <tr><td>Timeout / Retries</td><td>مهلت پاسخ و تعداد تلاش مجدد قبل از fallback به حساب محلی</td></tr>
+ <tr><td>Default Role</td><td>نقشی که به کاربران احرازشده از RADIUS داده می‌شود (مثلاً Read-Only)</td></tr>
+</table>
+<p>وقتی RADIUS فعال است ابتدا RADIUS سؤال می‌شود و در صورت عدم پاسخ/رد، حساب محلی امتحان می‌شود.</p>
+
+<h4>سرویس‌ها</h4>
+<ul>
+ <li><b>Modbus TCP:</b> سرور Modbus برای BMSها — پورت (پیش‌فرض 502)، Unit ID و اجازه نوشتن (اجازه فرمان از طریق رجیستر). نقشه رجیسترها در <code>docs/modbus-registers.md</code>.</li>
+ <li><b>FTP Server:</b> vsftpd chrooted برای انتقال فایل؛ فقط در صورت نیاز فعال کنید و پورت را در فایروال باز کنید.</li>
+ <li><b>MQTT Telemetry:</b> انتشار دوره‌ای وضعیت UPS به بروکر MQTT — Host/Port، TLS، کاربر/رمز، Topic Prefix و Interval. با «Save &amp; Test» پیام آزمایشی فرستاده می‌شود.</li>
+</ul>
+
+<h4>فایروال</h4>
+<p>قواعد nftables را از UI مدیریت می‌کند: پورت‌های مجاز TCP/UDP و محدودیت به آدرس‌های مشخص. قواعد پیش‌فرض فقط پورت‌های لازم (HTTP/S, SSH, NUT, SNMP…) را باز می‌گذارند. حین تغییر مراقب باشید پورتی که از آن وصل شده‌اید را نبندید.</p>
+
+<h4>Wired Port Authentication (802.1X)</h4>
+<p>احراز هویت پورت اترنت برای سوئیچ‌هایی با NAC (نه WiFi). متد EAP (PEAP/TTLS/TLS)، Identity، گذرواژه/گواهی و اینترفیس سیمی را تنظیم می‌کنید. در LAN معمولی غیرفعال بماند.</p>
+
+<h4>WiFi Setup</h4>
+<ul>
+ <li><b>اتصال به شبکه:</b> SSID و رمز — Scan لیست شبکه‌های اطراف را می‌آورد.</li>
+ <li><b>Wireless Hardware:</b> فعال/غیرفعال کردن کامل WiFi و Bluetooth داخلی در سطح بوت (dtoverlay). هر تغییر نیاز به <b>Reboot</b> دارد؛ وضعیت «pending reboot» تا ریست نمایش داده می‌شود.</li>
+</ul>
+<p class="note">غیرفعال کردن رادیویی که از طریق آن به کارت وصل هستید، دسترسی را قطع می‌کند — قبل از Disable مطمئن شوید مسیر جایگزین دارید.</p>
+
+<h4>Secure Boot</h4>
+<p>وضعیت Secure Boot / چک‌های بوت را نشان می‌دهد (مستندات در <code>docs/secure-boot.md</code>).</p>

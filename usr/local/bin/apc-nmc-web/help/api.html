@@ -1,0 +1,25 @@
+<p>علاوه بر وب‌UI، کارت چند رابط برنامه‌نویسی برای مانیتورینگ/اتوماسیون دارد.</p>
+
+<h4>REST API (JSON)</h4>
+<table>
+ <tr><th>Endpoint</th><th>توضیح</th></tr>
+ <tr><td><code>GET /status.json</code></td><td>وضعیت کامل UPS به‌صورت JSON (همانی که UI استفاده می‌کند). <code>?frag=1</code> فقط فرگمنت‌های داشبورد می‌دهد</td></tr>
+ <tr><td><code>GET /datalog.json[?hours=N&amp;off=O&amp;lim=L]</code></td><td>نمونه‌های دیتالاگ؛ <code>hours</code> بازه زمانی، <code>off/lim</code> صفحه‌بندی</td></tr>
+ <tr><td><code>GET /events.txt /data.txt</code></td><td>خروجی متنی لاگ‌ها؛ <code>data.txt?csv=1&amp;hours=N</code> برای CSV</td></tr>
+ <tr><td><code>GET /api/v1/vars</code></td><td>همه متغیرهای NUT (نیازمند Bearer token)</td></tr>
+ <tr><td><code>POST /api/v1/commands</code></td><td>ارسال فرمان به UPS (نیازمند Bearer token)</td></tr>
+ <tr><td><code>GET /metrics</code></td><td>متریک‌های Prometheus</td></tr>
+</table>
+<p>توکن Bearer از About › Update Settings (ادمین) ساخته می‌شود و در هدر <code>Authorization: Bearer &lt;tok&gt;</code> فرستاده می‌شود.</p>
+
+<h4>SNMP (APC PowerNet)</h4>
+<p>سرویس <code>apc-nmc-snmpd</code> MIB پاورنت APC را پیاده می‌کند: وضعیت UPS، باتری، ورودی/خروجی و ارسال Trap به NMS. از v1/v2c (community) و v3 (USM) پشتیبانی می‌شود. OIDهای پایه همان <code>.1.3.6.1.4.1.318</code> APC است.</p>
+
+<h4>Modbus TCP</h4>
+<p>برای سیستم‌های BMS/SCADA: رجیسترهای UPS روی پورت 502 (قابل تنظیم) سرو می‌شوند. نقشه کامل رجیسترها در <code>docs/modbus-registers.md</code>. گزینه Write اجازه اجرای فرمان از طریق رجیستر کنترل می‌دهد.</p>
+
+<h4>MQTT</h4>
+<p>هر N ثانیه وضعیت UPS به‌صورت JSON روی <code>&lt;prefix&gt;/state</code> منتشر می‌شود — برای Home Assistant، Node-RED، BMS. در Network Services فعال و با Test آزمایش کنید.</p>
+
+<h4>Syslog / Webhook</h4>
+<p>رویدادها هم‌زمان به syslog (UDP/TCP/TLS) و webhook JSON هم فرستاده می‌شوند — پیکربندی در Notifications.</p>

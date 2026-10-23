@@ -540,7 +540,9 @@ def test_support_bundle(tmp_path, monkeypatch):
     with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tf:
         names = tf.getnames()
         assert "meta.txt" in names and "nmc.conf" in names
-        c = tf.extractfile("nmc.conf").read().decode()
+        f = tf.extractfile("nmc.conf")
+        assert f is not None
+        c = f.read().decode()
     assert "secret123" not in c and "hunter2" not in c
     assert "<redacted>" in c and "host = m.local" in c
 
@@ -589,3 +591,17 @@ def test_datalog_page():
     assert p["rows"] == []                     # past end -> empty
     p = web.datalog_page(data, -5, 3)
     assert [r["ts"] for r in p["rows"]] == [9, 8, 7]   # neg off clamps
+
+
+def test_help_pages():
+    # every registered topic renders real content and has a TOC entry
+    for slug, title, _ in web.HELP_TOPICS:
+        h = web.pg_help({}, slug)
+        assert 'helptoc' in h and 'class="here"' in h
+        assert web.esc(title) in h
+        assert 'missing or not yet' not in h, slug
+    # unknown slugs fall back to index
+    assert 'Getting Around' in web.pg_help({}, 'nope')
+    # kv() tooltips appear for known labels only
+    assert 'class="tip"' in web.kv('Battery Charge', 'x')
+    assert 'class="tip"' not in web.kv('Some Other Label', 'x')
