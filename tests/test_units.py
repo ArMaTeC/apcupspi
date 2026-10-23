@@ -668,6 +668,44 @@ def test_code_split_parts():
         assert callable(getattr(web, fn)), fn
 
 
+def test_do_config_alarm(monkeypatch):
+    # beeper instcmd only fires on a real change and only when the UPS
+    # supports it — the mute-only driver must not error on plain saves
+    fired = []
+    st = {"cfg": {}}
+    monkeypatch.setattr(web, "load_state", lambda: st)
+    monkeypatch.setattr(web, "cfg_set", lambda k, v: st["cfg"].__setitem__(k, v))
+    monkeypatch.setattr(web, "log_event", lambda *a, **k: None)
+    monkeypatch.setattr(web, "ups_rw", lambda: set())
+    monkeypatch.setattr(web, "ups_setvar", lambda v, x: "OK")
+    monkeypatch.setattr(web, "ups_cmd", lambda c: fired.append(c) or "OK")
+
+    def run(alarm, status="", cmds=("beeper.mute",)):
+        fired.clear()
+        monkeypatch.setattr(web, "ups_vars",
+                            lambda: ({"ups.beeper.status": status}
+                                     if status else {}))
+        monkeypatch.setattr(web, "ups_cmds", lambda: list(cmds))
+        return web.do_config({"alarm": [alarm]})
+
+    # mute-only UPS, untouched default (1) → no cmd, no error
+    assert run("1") == ("msg-ok", "Configuration saved.")
+    assert not fired
+    # picking "never" on a UPS lacking beeper.disable → clear warning
+    cls, txt = run("3")
+    assert cls == "msg-err" and "not supported" in txt and not fired
+    # supported command fires when the selection changes
+    cls, txt = run("3", cmds=["beeper.disable", "beeper.mute"])
+    assert cls == "msg-ok" and fired == ["beeper.disable"]
+    # same-as-current selection is a no-op even when supported
+    assert run("4", status="muted",
+               cmds=["beeper.mute"]) == ("msg-ok", "Configuration saved.")
+    assert not fired
+    # mute works on the mute-only UPS when explicitly picked
+    assert run("4") == ("msg-ok", "Configuration saved.")
+    assert fired == ["beeper.mute"]
+
+
 def test_help_pages():
     # every registered topic renders real content and has a TOC entry
     for slug, title, _ in web.HELP_TOPICS:

@@ -74,10 +74,22 @@ def do_config(form):
 
     alarm = v("alarm")
     if alarm and re.fullmatch(r"[1-4]", alarm):
-        r = ups_cmd({1: "beeper.enable", 2: "beeper.enable",
-                     3: "beeper.disable", 4: "beeper.mute"}[int(alarm)])
-        if not r.startswith("OK"):
-            msgs.append("alarm setting: " + r)
+        try:
+            # same fallback pg_config renders (status var absent → 1)
+            cur = {"enabled": 1, "disabled": 3, "muted": 4}.get(
+                ups_vars().get("ups.beeper.status", ""), 1)
+            sup = ups_cmds()
+        except Exception:
+            cur, sup = 1, None   # upsd down: attempt, let error surface
+        cmd = {1: "beeper.enable", 2: "beeper.enable",
+               3: "beeper.disable", 4: "beeper.mute"}[int(alarm)]
+        if int(alarm) != cur:
+            if sup is not None and cmd not in sup:
+                msgs.append("alarm setting: not supported by this UPS")
+            else:
+                r = ups_cmd(cmd)
+                if not r.startswith("OK"):
+                    msgs.append("alarm setting: " + r)
     elif alarm:
         msgs.append("alarm: invalid value")
 

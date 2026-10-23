@@ -73,6 +73,7 @@ def pg_events(d, msg=""):
 <th>Event</th></tr>%s</table>
 <div style="margin-top:14px;display:flex;gap:10px">
 <a class="btn sec" href="/events.txt">Download events.txt</a>
+<a class="btn sec" href="/data.txt" title="Download the power data log">Download data.txt</a>
 %s</div>
 </div></div>""" % (m, rows, clearform)
 

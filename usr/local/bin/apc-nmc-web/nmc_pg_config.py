@@ -5,7 +5,7 @@ _load_parts() call near the bottom of that file). Names defined in
 other parts or the main file resolve through the shared module
 globals — identical semantics to the former single file."""
 # Part of apc-nmc-web.py — see that file for the noqa rationale.
-# ruff: noqa: UP031
+# ruff: noqa: BLE001, UP031
 # pyright: reportUndefinedVariable=false
 
 def _sessions_rows(d, cur_tok, can_drop=True):
@@ -56,10 +56,18 @@ def pg_config(d, msg: "str | tuple" = "", cur_tok=""):
                            int(num(d, "ups.delay.shutdown", 0) or 0) * 100))
     alarm = {"enabled": 1, "disabled": 3, "muted": 4}.get(
         d.get("ups.beeper.status", "enabled"), 1)
-    opts = "".join('<option value="%d"%s>%s</option>' % (
-        v, " selected" if v == alarm else "", t)
-        for v, t in [(1, "on battery / timed"), (2, "at low battery"),
-                     (3, "never"), (4, "mute current alarm")])
+    try:
+        _sup = ups_cmds()
+    except Exception:
+        _sup = None
+    opts = "".join('<option value="%d"%s%s>%s%s</option>' % (
+        v, " selected" if v == alarm else "",
+        "" if _sup is None or c in _sup else " disabled",
+        t, "" if _sup is None or c in _sup else " — not supported")
+        for v, t, c in [(1, "on battery / timed", "beeper.enable"),
+                        (2, "at low battery", "beeper.enable"),
+                        (3, "never", "beeper.disable"),
+                        (4, "mute current alarm", "beeper.mute")])
     sensopts = "".join('<option value="%d"%s>%s</option>' % (
         v, " selected" if int(cfg_get("sensitivity", 1)) == v else "", t)
         for v, t in [(1, "auto"), (2, "low"), (3, "medium"), (4, "high")])
