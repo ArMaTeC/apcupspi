@@ -6,6 +6,7 @@ other parts or the main file resolve through the shared module
 globals — identical semantics to the former single file."""
 # Part of apc-nmc-web.py — see that file for the noqa rationale.
 # ruff: noqa: UP031
+# pyright: reportUndefinedVariable=false
 
 def _sessions_rows(d, cur_tok, can_drop=True):
     """Active-session table for the config page (N5). Log-off buttons

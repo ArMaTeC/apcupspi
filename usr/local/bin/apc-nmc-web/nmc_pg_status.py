@@ -6,6 +6,7 @@ other parts or the main file resolve through the shared module
 globals — identical semantics to the former single file."""
 # Part of apc-nmc-web.py — see that file for the noqa rationale.
 # ruff: noqa: UP031
+# pyright: reportUndefinedVariable=false
 
 def tile(lbl, val, sub="", bar=None, cls="", vid="", tip=""):
     b = ('<div class="bar"><i style="width:%s%%"></i></div>'

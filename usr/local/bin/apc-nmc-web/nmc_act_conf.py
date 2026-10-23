@@ -6,6 +6,7 @@ other parts or the main file resolve through the shared module
 globals — identical semantics to the former single file."""
 # Part of apc-nmc-web.py — see that file for the noqa rationale.
 # ruff: noqa: BLE001, UP031
+# pyright: reportUndefinedVariable=false
 
 def do_config(form):
     def v(name):

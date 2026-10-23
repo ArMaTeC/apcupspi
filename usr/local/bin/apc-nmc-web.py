@@ -11,6 +11,7 @@ translated to NUT instant commands and SET VARs.
 # or sysfs hiccups, try/except/pass tolerates missing system files, and %-format
 # is used because the HTML templates contain literal { } (CSS/JS).
 # ruff: noqa: BLE001, S110, UP031, F821, S102
+# pyright: reportUndefinedVariable=false
 import configparser
 import fcntl
 import hashlib

@@ -6,6 +6,7 @@ other parts or the main file resolve through the shared module
 globals — identical semantics to the former single file."""
 # Part of apc-nmc-web.py — see that file for the noqa rationale.
 # ruff: noqa: BLE001, S110, UP031
+# pyright: reportUndefinedVariable=false
 
 def do_control(act, skipdel, pcns):
     if pcns:
