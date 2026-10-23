@@ -301,6 +301,8 @@ The repo mirrors filesystem layout — files land exactly where they sit:
 install.sh                  installer (payload = this repo)
 ├── docs/img/               README screenshots
 ├── usr/local/bin/          apc-nmc-web.py · apc-nmc-agent.py · apc-nmc-modbus.py · web UI assets
+│   └── apc-nmc-web/        UI assets (css/js/help) + nmc_pg_*/nmc_act_* part files —
+│                           page/action code exec'd into the web module's namespace
 ├── usr/local/sbin/         apc-nmc-update.sh · apc-nmc-firewall.sh · apc-nmc-dot1x.sh · firstboot-wizard.sh · watchdog/backup tools
 ├── usr/lib/nut/apc_modbus  fallback prebuilt NUT driver (aarch64)
 ├── usr/local/lib/          fallback libmodbus.so.5 (runtime dep of apc_modbus)

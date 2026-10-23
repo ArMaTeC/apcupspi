@@ -12,7 +12,7 @@ jobs:
           python-version: "3.x"
       - run: pip install ruff pytest
       - run: ruff check usr/local/bin/
-      - run: python3 -m py_compile usr/local/bin/apc-nmc-web.py usr/local/bin/apc-nmc-agent.py usr/local/bin/apc-nmc-modbus.py
+      - run: python3 -m py_compile usr/local/bin/apc-nmc-web.py usr/local/bin/apc-nmc-web/nmc_*.py usr/local/bin/apc-nmc-agent.py usr/local/bin/apc-nmc-modbus.py
       - run: python3 -m pytest tests -q
       - name: shellcheck + bash -n
         run: |

@@ -651,6 +651,22 @@ def test_datalog_page():
     assert [r["ts"] for r in p["rows"]] == [9, 8, 7]   # neg off clamps
 
 
+def test_code_split_parts():
+    # every _load_parts file ships and the loaded module exposes all
+    # page renderers + POST handlers that used to live in one file
+    for name in web._PARTS:
+        p = os.path.join(web.ASSET_DIR, name)
+        assert os.path.isfile(p), name
+        compile(open(p).read(), p, "exec")          # syntax check
+    for fn in ("pg_home", "pg_status", "pg_control", "pg_outlets",
+               "pg_tests", "pg_config", "pg_users", "pg_system",
+               "pg_events", "pg_data", "pg_about", "pg_network",
+               "pg_nut", "pg_host", "pg_help", "pg_404",
+               "do_config", "do_users", "do_roles", "do_notify_config",
+               "do_update_apply", "do_wifi", "do_control", "do_test"):
+        assert callable(getattr(web, fn)), fn
+
+
 def test_help_pages():
     # every registered topic renders real content and has a TOC entry
     for slug, title, _ in web.HELP_TOPICS:

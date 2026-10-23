@@ -1,3 +1,10 @@
 # Vendored third-party code (Argon One daemon scripts, NUT sources)
 # is shipped verbatim — lint only this project's own files.
 exclude = ["etc/argon", "vendor", "docs"]
+
+# Web page/action part files are exec()ed into apc-nmc-web.py's module
+# namespace (see _load_parts in that file) — cross-file names resolve
+# through shared module globals, so F821 can't see them statically.
+[lint.per-file-ignores]
+"usr/local/bin/apc-nmc-web/nmc_pg_*.py" = ["F821"]
+"usr/local/bin/apc-nmc-web/nmc_act_*.py" = ["F821"]
