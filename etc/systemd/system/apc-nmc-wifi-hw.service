@@ -1,0 +1,10 @@
+[Unit]
+Description=APC NMC onboard WiFi/BT boot-config editor
+After=local-fs.target
+
+# Started on demand by the web UI (systemctl --no-block) after it writes
+# /var/lib/apc-nmc/wifi-hw.request — the sandboxed web service cannot
+# write /boot itself, so this unit edits config.txt as root.
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/apc-nmc-wifi-hw.sh

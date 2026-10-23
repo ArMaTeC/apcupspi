@@ -97,6 +97,7 @@ put usr/local/bin/apc-nmc-web              # web UI assets (js/css)
 put usr/local/sbin/apc-nmc-update.sh    0755
 put usr/local/sbin/apc-nmc-firewall.sh  0755
 put usr/local/sbin/apc-nmc-dot1x.sh     0755
+put usr/local/sbin/apc-nmc-wifi-hw.sh   0755
 put usr/local/sbin/firstboot-wizard.sh  0755
 put usr/local/sbin/net-watchdog.sh      0755
 put usr/local/sbin/nut-usb-detect.sh    0755
@@ -220,6 +221,7 @@ put etc/systemd/system/apc-nmc-modbus.service 0644
 put etc/systemd/system/apc-nmc-modbus.service.d 2>/dev/null || true
 put etc/systemd/system/apc-nmc-firewall.service 0644
 put etc/systemd/system/apc-nmc-dot1x.service 0644
+put etc/systemd/system/apc-nmc-wifi-hw.service 0644
 put etc/systemd/system/net-watchdog.service 0644
 put etc/systemd/system/net-watchdog.timer 0644
 put etc/systemd/system/apc-nmc-update.service 0644

@@ -163,7 +163,7 @@ Runs at the end of the install, and can be re-run any time via
 
 | Prompt | What it does |
 | -------- | -------------- |
-| Hardware hardening | `enable_uart`, hardware watchdog, disable onboard WiFi/BT |
+| Hardware hardening | `enable_uart`, hardware watchdog, disable onboard WiFi/BT — radios can be re-enabled later under **System → WiFi Setup → Wireless Hardware** (reboot required) |
 | Pi 4 overclock | `arm_freq=1750`, `over_voltage=2`, `gpu_freq=600` (Pi 5 ignores it) |
 | `/var/swap` | Creates a dedicated 10G swapfile |
 | Argon One | Fan/button daemon + i2c, if you run the Argon One case |

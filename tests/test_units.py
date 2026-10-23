@@ -305,6 +305,99 @@ def test_do_wifi_validation():
                          "ifname", "wlan0", "password", "12345678")
 
 
+def test_wifi_hw_status(tmp_path):
+    cfg = tmp_path / "config.txt"
+    cfg.write_text("[all]\ndtoverlay=disable-wifi\ndtparam=watchdog=on\n")
+    web.BOOTCFGS = (str(cfg),)
+    st = web.wifi_hw_status()
+    assert st["wifi"] is True and st["bt"] is False and st["cfg"]
+    cfg.write_text("[all]\ndtparam=watchdog=on\n")
+    assert web.wifi_hw_status()["wifi"] is False
+    web.BOOTCFGS = (str(tmp_path / "missing"),)
+    assert web.wifi_hw_status()["cfg"] is False
+
+
+def test_do_wifi_hw_actions(tmp_path, monkeypatch):
+    req = tmp_path / "wifi-hw.request"
+    web.WIFI_HW_REQ = str(req)
+    starts = []
+    web._sysctl = lambda *a: starts.append(a) or (0, "")
+    web.log_event = lambda *a, **k: None
+    web.wifi_status = lambda: ("enabled", "", False)  # no NM — must not
+    # block boot-config actions
+    assert web.do_wifi({"act": ["hw_enable"], "hw": ["wifi"]})[0] \
+        == "msg-ok"
+    assert req.read_text() == "wifi=enable\n"
+    assert starts == [("start", "--no-block", "apc-nmc-wifi-hw.service")]
+    assert web.do_wifi({"act": ["hw_disable"], "hw": ["bt"]})[0] \
+        == "msg-ok"
+    assert req.read_text().endswith("bt=disable\n")
+    assert web.do_wifi({"act": ["hw_enable"], "hw": ["gpu"]})[0] \
+        == "msg-err"                          # unknown radio
+    web._sysctl = lambda *a: (1, "denied")
+    req.unlink()
+    assert web.do_wifi({"act": ["hw_disable"], "hw": ["wifi"]})[0] \
+        == "msg-err"                          # service start failed
+    timers = []
+
+    class _T:
+        def __init__(s, d, fn):
+            timers.append(fn)
+
+        def start(s):
+            pass
+
+    monkeypatch.setattr(web.threading, "Timer", _T)
+    assert web.do_wifi({"act": ["reboot"]})[0] == "msg-ok"
+    assert len(timers) == 1                   # deferred reboot scheduled
+
+
+def test_wifi_hw_script(tmp_path):
+    """Run the real helper against temp config.txt fixtures."""
+    script = os.path.join(ROOT, "usr/local/sbin/apc-nmc-wifi-hw.sh")
+    cfg = tmp_path / "config.txt"
+    req = tmp_path / "wifi-hw.request"
+
+    def run(cfgtxt, reqtxt):
+        cfg.write_text(cfgtxt)
+        req.write_text(reqtxt)
+        subprocess.run(
+            ["bash", str(script)], check=True,
+            env={**os.environ, "APCNMC_BOOTCFG": str(cfg),
+                 "APCNMC_WIFIHW_REQ": str(req)})
+        assert not req.exists()              # request consumed
+        return cfg.read_text()
+
+    base = ("# >>> apc-nmc\n[all]\nenable_uart=1\n"
+            "dtoverlay=disable-wifi\ndtoverlay=disable-bt\n"
+            "dtparam=watchdog=on\n[pi5]\ndtoverlay=nospi10\n"
+            "# <<< apc-nmc\n")
+    # enable wifi: only that overlay goes, everything else preserved
+    out = run(base, "wifi=enable\n")
+    assert "disable-wifi" not in out
+    for keep in ("disable-bt", "enable_uart=1", "watchdog=on",
+                 "[pi5]", "nospi10"):
+        assert keep in out
+    # disable wifi into a block whose [all] exists
+    out = run(base, "wifi=disable\n")
+    assert "dtoverlay=disable-wifi" in out
+    assert out.count("[all]") == 1
+    # disable wifi into a block without [all]
+    out = run("# >>> apc-nmc\n[pi4]\narm_freq=1750\n# <<< apc-nmc\n",
+              "wifi=disable\n")
+    assert "[all]\ndtoverlay=disable-wifi\n# <<< apc-nmc" in out
+    # no managed block at all -> append a fresh one
+    out = run("arm_freq=1500\n", "wifi=disable\n")
+    assert out.startswith("arm_freq=1500\n")
+    assert "# >>> apc-nmc\n[all]\ndtoverlay=disable-wifi" in out
+    # idempotent: second identical request changes nothing
+    out2 = run(out, "wifi=disable\n")
+    assert out2 == out
+    # garbage lines are ignored, file untouched
+    out3 = run(out, "gpu=explode\nwifi=maybe\n")
+    assert out3 == out
+
+
 def test_wifi_scan_parse():
     web._nmcli = lambda *a, timeout=15: \
         (0, "CorpNet:80:WPA2\nCorpNet:99:WPA2\nHome:50:\n:10:")

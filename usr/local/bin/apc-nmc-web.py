@@ -454,6 +454,28 @@ def wifi_status():
     return radio or "unknown", conn, True
 
 
+BOOTCFGS = ("/boot/firmware/config.txt", "/boot/config.txt")
+WIFI_HW_REQ = "/var/lib/apc-nmc/wifi-hw.request"
+
+
+def wifi_hw_status():
+    """-> {"wifi": bool, "bt": bool, "cfg": bool} — True means the radio
+    is killed at boot by dtoverlay=disable-* in config.txt (what the
+    installer's hardware hardening writes). cfg = config.txt readable."""
+    txt = ""
+    for path in BOOTCFGS:
+        try:
+            with open(path) as f:
+                txt = f.read()
+            break
+        except OSError:
+            continue
+    return {
+        radio: bool(re.search(r"(?m)^\s*dtoverlay=disable-%s\b" % radio,
+                              txt))
+        for radio in ("wifi", "bt")} | {"cfg": bool(txt)}
+
+
 def wifi_scan(ifname=""):
     """-> [{'ssid','signal','security'}] from nmcli dev wifi list."""
     args = ["-t", "-f", "SSID,SIGNAL,SECURITY", "dev", "wifi", "list"]
@@ -2841,15 +2863,52 @@ interface via wpa_supplicant. Status: <b>%s / %s</b></p>
              "key password"), xc)
 
     # ---- wifi setup ----------------------------------------------------
+    # Boot-config radios (dtoverlay=disable-*) — visible in every branch
+    # since a boot-disabled radio is exactly when no wlan iface exists.
+    hw = wifi_hw_status()
+    hrows = ""
+    for radio, label in (("wifi", "WiFi"), ("bt", "Bluetooth")):
+        dis = hw[radio]
+        btn = ""
+        if admin:
+            btn = ('<form method="post" action="/config/wifi" '
+                   'style="display:inline">%s'
+                   '<input type="hidden" name="act" value="%s">'
+                   '<input type="hidden" name="hw" value="%s">'
+                   '<button class="btn sec" type="submit">%s</button>'
+                   '</form>'
+                   % (csrf, "hw_enable" if dis else "hw_disable",
+                      radio, "Enable" if dis else "Disable"))
+        hrows += ('<tr><td class="lbl">Onboard %s</td><td>%s</td>'
+                  '<td style="text-align:right">%s</td></tr>' % (
+                      label,
+                      '<span class="st-warn">disabled at boot</span>'
+                      if dis else "enabled", btn))
+    hwsec = ""
+    if hw["cfg"]:
+        hwsec = ('<h4 style="margin:22px 0 8px">Wireless Hardware '
+                 '(boot config)</h4><table class="kv">%s</table>'
+                 '<p class="note" style="margin-top:8px">Boot-config '
+                 'changes apply at next boot &mdash; the installer '
+                 'hardening option writes these overlays.</p>' % hrows)
+        if admin:
+            hwsec += ('<form method="post" action="/config/wifi" '
+                      'onsubmit="return confirm('
+                      "'Reboot the card now to apply boot-config "
+                      "changes?')\">%s"
+                      '<input type="hidden" name="act" value="reboot">'
+                      '<button class="btn dan" type="submit">Reboot Now'
+                      '</button></form>' % csrf)
     wlifaces = net_ifaces(("wl",))
     wradio, wconn, has_nm = wifi_status()
     if not has_nm:
         wcard = """<div class="card"><h3>WiFi Setup</h3><div class="pad">
 <p class="note">NetworkManager (nmcli) is not installed — onboard WiFi
-setup is unavailable.</p></div></div>"""
+setup is unavailable.</p>%s</div></div>""" % hwsec
     elif not wlifaces:
         wcard = """<div class="card"><h3>WiFi Setup</h3><div class="pad">
-<p class="note">No wireless interface detected.</p></div></div>"""
+<p class="note">No wireless interface detected.</p>%s</div></div>""" \
+            % hwsec
     else:
         wo, wc = rof("/config/wifi")
         wcard = """<div class="card"><h3>WiFi Setup</h3><div class="pad">%s
@@ -2884,7 +2943,7 @@ fetch('/config/wifi/scan?if='+encodeURIComponent(
  msg.textContent=ns.length?ns.length+' network(s)':'none found';
  document.getElementById('wssid').focus()})
 .catch(function(){msg.textContent='scan failed'})}})();
-</script>%s</div></div>""" % (
+</script>%s%s</div></div>""" % (
             wo,
             esc(wradio),
             (" &mdash; connected to <b>%s</b>" % esc(wconn)) if wconn else "",
@@ -2902,7 +2961,7 @@ fetch('/config/wifi/scan?if='+encodeURIComponent(
                 '<option value="%s"%s>%s</option>'
                 % (i, " selected" if i == wlifaces[0] else "", esc(i))
                 for i in wlifaces)),
-            wc)
+            hwsec, wc)
 
     sb = secure_boot_status()
     sbcard = """<div class="card"><h3>Secure Boot</h3><div class="pad">
@@ -4543,10 +4602,41 @@ def do_dot1x(form):
     return ("msg-ok", "802.1X settings saved.")
 
 
+def _reboot_later():
+    rc, _ = _sysctl("reboot")
+    if rc != 0:
+        _run(["reboot", "-f"], 5)
+
+
 def do_wifi(form):
-    """WiFi setup actions: activate the radio, scan-agnostic connect,
-    disconnect, or power the radio off (all via NetworkManager)."""
+    """WiFi setup actions: radio on/off/connect/disconnect via
+    NetworkManager, plus boot-config radio toggles (dtoverlay in
+    config.txt — admin-only, needs a reboot) and reboot itself."""
     act = form.get("act", [""])[0]
+    # Boot-config actions need no NetworkManager — they matter most when
+    # the radio was disabled at install time and no wlan iface exists.
+    # (Admin gating happens in do_POST before dispatch.)
+    if act in ("hw_enable", "hw_disable", "reboot"):
+        if act == "reboot":
+            log_event("NMC: Reboot requested via the network management "
+                      "card.")
+            threading.Timer(1.5, _reboot_later).start()
+            return ("msg-ok", "Rebooting - reconnect in a minute.")
+        radio = form.get("hw", [""])[0]
+        if radio not in ("wifi", "bt"):
+            return ("msg-err", "Unknown radio.")
+        try:
+            with open(WIFI_HW_REQ, "a") as f:
+                f.write("%s=%s\n" % (radio, act[3:]))
+        except OSError as e:
+            return ("msg-err", "Request failed: %s" % e)
+        rc, out = _sysctl("start", "--no-block", "apc-nmc-wifi-hw.service")
+        if rc != 0:
+            return ("msg-err", "Boot-config service failed: %s" % esc(out))
+        log_event("NMC: Onboard %s %sd in boot config; reboot required."
+                  % (radio, act[3:]))
+        return ("msg-ok", "Onboard %s %sd - reboot the card to apply."
+                        % (radio, act[3:]))
     _radio, _conn, has_nm = wifi_status()
     if not has_nm:
         return ("msg-err", "NetworkManager (nmcli) not detected.")
@@ -5187,6 +5277,13 @@ class H(BaseHTTPRequestHandler):
             if res[0] == "msg-ok":
                 return self._redir("/config/ups?r=ok")
             return self._redir("/config/ups?r=err&why=" + quote(res[1]))
+        # Boot-config radio toggles + reboot are admin-only even though
+        # they share the network role's /config/wifi path — they edit
+        # /boot and can take the whole card offline.
+        if p == "/config/wifi" and role != "admin" and \
+                f.get("act", [""])[0] in ("hw_enable", "hw_disable",
+                                          "reboot"):
+            return self._page(403, pg_403(), {}, p)
         for pp, fn in (("/config/users", do_users),
                        ("/config/radius", do_radius),
                        ("/config/services", do_services),

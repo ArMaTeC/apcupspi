@@ -278,6 +278,7 @@ EOF
              usr/local/sbin/apc-nmc-update.sh \
              usr/local/sbin/apc-nmc-firewall.sh \
              usr/local/sbin/apc-nmc-dot1x.sh \
+             usr/local/sbin/apc-nmc-wifi-hw.sh \
              usr/local/sbin/firstboot-wizard.sh \
              usr/local/sbin/net-watchdog.sh \
              usr/local/sbin/nut-usb-detect.sh \
