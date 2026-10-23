@@ -60,14 +60,37 @@ def pg_config(d, msg: "str | tuple" = "", cur_tok=""):
         _sup = ups_cmds()
     except Exception:
         _sup = None
-    opts = "".join('<option value="%d"%s%s>%s%s</option>' % (
-        v, " selected" if v == alarm else "",
-        "" if _sup is None or c in _sup else " disabled",
-        t, "" if _sup is None or c in _sup else " — not supported")
-        for v, t, c in [(1, "on battery / timed", "beeper.enable"),
-                        (2, "at low battery", "beeper.enable"),
-                        (3, "never", "beeper.disable"),
-                        (4, "mute current alarm", "beeper.mute")])
+    if _sup is not None and "beeper.enable" not in _sup \
+            and "beeper.disable" not in _sup:
+        # driver only exposes the momentary mute (or nothing): render a
+        # one-click Mute button instead of a mode select. The button
+        # posts its own hidden form (forms can't nest inside the card
+        # form) via the HTML5 form= attribute.
+        if "beeper.mute" in _sup:
+            beeper_ui = ('<button form="mutebeeper" class="btn sec">'
+                         'Mute Beeper</button> '
+                         '<span class="note">only momentary muting is '
+                         'supported by this UPS</span>')
+            muteform = ('<form id="mutebeeper" method="post" '
+                        'action="/config/ups" style="display:none">%s'
+                        '<input type="hidden" name="alarm" value="4">'
+                        '</form>' % csrf_input(d))
+        else:
+            beeper_ui = ('<span class="note">no beeper control on '
+                         'this UPS</span>')
+            muteform = ""
+    else:
+        beeper_ui = '<select name="alarm">%s</select>' % "".join(
+            '<option value="%d"%s%s>%s%s</option>' % (
+                v, " selected" if v == alarm else "",
+                "" if _sup is None or c in _sup else " disabled",
+                t, "" if _sup is None or c in _sup
+                     else " — not supported")
+            for v, t, c in [(1, "on battery / timed", "beeper.enable"),
+                            (2, "at low battery", "beeper.enable"),
+                            (3, "never", "beeper.disable"),
+                            (4, "mute current alarm", "beeper.mute")])
+        muteform = ""
     sensopts = "".join('<option value="%d"%s>%s</option>' % (
         v, " selected" if int(cfg_get("sensitivity", 1)) == v else "", t)
         for v, t in [(1, "auto"), (2, "low"), (3, "medium"), (4, "high")])
@@ -201,14 +224,14 @@ nmc.conf and card state, then restarts this interface.</p>
 <div id="bkmsg" class="mut" style="margin-top:8px"></div>
 </div></div>"""
     return """<h1 class="page">UPS Configuration</h1>%s
-<div class="card"><h3>General</h3><div class="pad">
+<div class="card"><h3>General</h3><div class="pad">%s
 <form method="post" action="/config/ups"><table class="kv">
 %s
 <tr><td class="lbl">UPS Name<span class="tip" title="Logical UPS name in NUT — must match the entry in ups.conf (usually 'myups')">?</span></td><td><input name="ups_name" maxlength="32" value="%s"></td></tr>
 <tr><td class="lbl">UPS Identifier (ups.id)<span class="tip" title="Identifier reported to clients as ups.id — informational">?</span></td><td><input name="ups_id" maxlength="16" value="%s"></td></tr>
 <tr><td class="lbl">Location<span class="tip" title="Physical location; shown on the dashboard and included in notifications">?</span></td><td><input name="location" maxlength="64" value="%s"></td></tr>
 <tr><td class="lbl">Contact<span class="tip" title="Responsible person; included in notification messages">?</span></td><td><input name="contact" maxlength="64" value="%s"></td></tr>
-<tr><td class="lbl">Audible Alarm<span class="tip" title="Enable/disable the UPS beeper that sounds on power events">?</span></td><td><select name="alarm">%s</select></td></tr>
+<tr><td class="lbl">Audible Alarm<span class="tip" title="Enable/disable the UPS beeper that sounds on power events">?</span></td><td>%s</td></tr>
 <tr><td class="lbl">Sensitivity<span class="tip" title="How readily the UPS transfers to battery on input fluctuation — higher means more transfers">?</span></td><td><select name="sens">%s</select></td></tr>
 <tr><td class="lbl">Rated Output Voltage<span class="tip" title="Nominal output voltage the UPS regulates (e.g. 230 V)">?</span></td><td><input name="ratedv" type="number" min="100" max="300" value="%s"></td></tr>
 </table>
@@ -229,10 +252,10 @@ nmc.conf and card state, then restarts this interface.</p>
 <script>var NMC_INIT={csrf:%s};</script><script>%s</script>
 <p class="note">Values the UPS can store are written to it via NUT SET VAR;
 the rest are kept on the management card.</p>""" % (
-        m, csrf_input(d),
+        m, muteform, csrf_input(d),
         g("ups_name", "APC Smart-UPS"),
         esc(d.get("ups.id", "")),
-        g("location", LOCATION), g("contact", CONTACT), opts, sensopts,
+        g("location", LOCATION), g("contact", CONTACT), beeper_ui, sensopts,
         ratedv,
         lowrt_tt // 100, sddel_tt // 100,
         esc(d.get("ups.delay.start", "0")),
