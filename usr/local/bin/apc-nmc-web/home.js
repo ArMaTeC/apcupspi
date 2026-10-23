@@ -49,7 +49,12 @@ setInterval(function () {
             var f = d.frag || {};
             for (var k in f) {
                 var el = document.getElementById(k);
-                if (el && el.innerHTML !== f[k]) {
+                // compare against the last raw fragment — innerHTML is
+                // normalized by the browser so it never equals the
+                // server string even when nothing changed (repaint
+                // flicker every poll)
+                if (el && el._lastFrag !== f[k]) {
+                    el._lastFrag = f[k];
                     el.innerHTML = f[k];
                     // flash only the text-y fragments, not whole tables
                     if (k === 'hs' || k === 'ht') {

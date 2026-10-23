@@ -16,7 +16,13 @@ setInterval(function () {
             var f = d.frag || {};
             for (var k in f) {
                 var el = document.getElementById(k);
-                if (el && el.innerHTML !== f[k]) {
+                // compare against the last raw fragment, not innerHTML —
+                // the browser normalizes markup on write (entities,
+                // attribute quoting) so innerHTML !== server string even
+                // when nothing changed, causing a swap + repaint flicker
+                // every poll.
+                if (el && el._lastFrag !== f[k]) {
+                    el._lastFrag = f[k];
                     el.innerHTML = f[k];
                     var t = el.closest('table');
                     if (t && t._apply) t._apply();
