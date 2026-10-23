@@ -20,6 +20,7 @@ BOOTCFG="${APCNMC_BOOTCFG:-/boot/firmware/config.txt}"
 [ -f "$REQ" ] || exit 0                      # nothing requested
 [ -f "$BOOTCFG" ] || { logger -t "$TAG" "no config.txt found"; exit 1; }
 
+rm -f "$REQ.work"                            # stale run leftover
 mv "$REQ" "$REQ.work"
 changed=0
 

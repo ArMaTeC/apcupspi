@@ -6,6 +6,7 @@ import json
 import os
 import struct
 import subprocess
+import time
 from typing import Any
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -315,6 +316,47 @@ def test_wifi_hw_status(tmp_path):
     assert web.wifi_hw_status()["wifi"] is False
     web.BOOTCFGS = (str(tmp_path / "missing"),)
     assert web.wifi_hw_status()["cfg"] is False
+
+
+def test_boot_cfg_pending(tmp_path):
+    cfg = tmp_path / "config.txt"
+    cfg.write_text("x\n")
+    st = tmp_path / "stat"
+    web.BOOTCFGS = (str(cfg),)
+    web.PROC_STAT = str(st)
+    # boot an hour ago, config touched now -> pending
+    st.write_text(f"btime {int(time.time()) - 3600}\n")
+    assert web.boot_cfg_pending() is True
+    # boot in the future (config older than boot) -> not pending
+    st.write_text(f"btime {int(time.time()) + 3600}\n")
+    assert web.boot_cfg_pending() is False
+    st.write_text("garbage\n")
+    assert web.boot_cfg_pending() is False
+    web.PROC_STAT = str(tmp_path / "gone")
+    assert web.boot_cfg_pending() is False
+
+
+def test_pg_system_wifi_hw_section(tmp_path):
+    cfg = tmp_path / "config.txt"
+    cfg.write_text("# >>> apc-nmc\n[all]\ndtoverlay=disable-wifi\n"
+                   "dtoverlay=disable-bt\n# <<< apc-nmc\n")
+    web.BOOTCFGS = (str(cfg),)
+    web.wifi_status = lambda: ("enabled", "", False)   # no NM
+    web.net_ifaces = lambda p: []
+    web.boot_cfg_pending = lambda: True
+    a = web.pg_system({"__role": "admin", "__csrf": "X", "__uinfo": ""})
+    assert 'value="hw_enable"' in a and 'value="reboot"' in a
+    assert "Reboot pending" in a
+    assert "disabled at boot" in a
+    r = web.pg_system({"__role": "readonly", "__csrf": "X",
+                       "__uinfo": ""})
+    assert "disabled at boot" in r                    # status visible
+    assert 'value="hw_enable"' not in r
+    assert 'value="reboot"' not in r                  # but no buttons
+    # enabled-in-config but no live radio + pending -> pending label
+    cfg.write_text("[all]\n")
+    a = web.pg_system({"__role": "admin", "__csrf": "X", "__uinfo": ""})
+    assert "pending reboot" in a
 
 
 def test_do_wifi_hw_actions(tmp_path, monkeypatch):

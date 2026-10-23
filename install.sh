@@ -338,7 +338,7 @@ CFG_BLOCK() {
     cat >> "$BOOTCFG"
 }
 
-if confirm "Apply hardware hardening to config.txt?\n\n- enable UART + hardware watchdog\n- disable onboard WiFi and Bluetooth\n(Choose No to keep WiFi/BT enabled.)"; then
+if confirm "Apply hardware hardening to config.txt?\n\n- enable UART + hardware watchdog\n- disable onboard WiFi and Bluetooth\n(Choose No to keep WiFi/BT enabled. Radios can be re-enabled later under System -> WiFi Setup -> Wireless Hardware.)"; then
     CFG_BLOCK <<'EOF'
 # >>> apc-nmc
 [all]

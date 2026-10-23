@@ -456,6 +456,26 @@ def wifi_status():
 
 BOOTCFGS = ("/boot/firmware/config.txt", "/boot/config.txt")
 WIFI_HW_REQ = "/var/lib/apc-nmc/wifi-hw.request"
+PROC_STAT = "/proc/stat"
+
+
+def boot_cfg_pending():
+    """True when config.txt was modified after this boot — overlay edits
+    only take effect at boot time, so the running radios don't match
+    the on-disk intent until a reboot."""
+    try:
+        with open(PROC_STAT) as f:
+            btime = next(int(l.split()[1]) for l in f
+                         if l.startswith("btime"))
+    except (OSError, StopIteration, ValueError, IndexError):
+        return False
+    for path in BOOTCFGS:
+        try:
+            if os.path.getmtime(path) > btime + 5:
+                return True
+        except OSError:
+            continue
+    return False
 
 
 def wifi_hw_status():
@@ -2866,31 +2886,54 @@ interface via wpa_supplicant. Status: <b>%s / %s</b></p>
     # Boot-config radios (dtoverlay=disable-*) — visible in every branch
     # since a boot-disabled radio is exactly when no wlan iface exists.
     hw = wifi_hw_status()
+    pend = boot_cfg_pending()
+    wlifaces = net_ifaces(("wl",))
+    wradio, wconn, has_nm = wifi_status()
+    try:
+        bt_live = any(i.startswith("hci")
+                      for i in os.listdir("/sys/class/bluetooth"))
+    except OSError:
+        bt_live = False
     hrows = ""
     for radio, label in (("wifi", "WiFi"), ("bt", "Bluetooth")):
         dis = hw[radio]
+        live = bool(wlifaces) if radio == "wifi" else bt_live
+        if dis:
+            st = ('<span class="st-warn">disabled &mdash; pending '
+                  'reboot</span>' if live
+                  else '<span class="st-warn">disabled at boot</span>')
+        else:
+            st = "enabled"
+            if not live and pend:
+                st = ('<span class="st-warn">enabled &mdash; pending '
+                      'reboot</span>')
         btn = ""
         if admin:
+            conf = "" if dis else (
+                ' onsubmit="return confirm('
+                "'Disabling onboard %s takes effect at reboot and can "
+                "cut access if this card reaches you over that radio. "
+                "Continue?')" % label)
             btn = ('<form method="post" action="/config/wifi" '
-                   'style="display:inline">%s'
+                   'style="display:inline"%s>%s'
                    '<input type="hidden" name="act" value="%s">'
                    '<input type="hidden" name="hw" value="%s">'
                    '<button class="btn sec" type="submit">%s</button>'
                    '</form>'
-                   % (csrf, "hw_enable" if dis else "hw_disable",
+                   % (conf, csrf, "hw_enable" if dis else "hw_disable",
                       radio, "Enable" if dis else "Disable"))
         hrows += ('<tr><td class="lbl">Onboard %s</td><td>%s</td>'
-                  '<td style="text-align:right">%s</td></tr>' % (
-                      label,
-                      '<span class="st-warn">disabled at boot</span>'
-                      if dis else "enabled", btn))
-    hwsec = ""
+                  '<td style="text-align:right">%s</td></tr>'
+                  % (label, st, btn))
     if hw["cfg"]:
         hwsec = ('<h4 style="margin:22px 0 8px">Wireless Hardware '
                  '(boot config)</h4><table class="kv">%s</table>'
                  '<p class="note" style="margin-top:8px">Boot-config '
                  'changes apply at next boot &mdash; the installer '
-                 'hardening option writes these overlays.</p>' % hrows)
+                 'hardening option writes these overlays.%s</p>'
+                 % (hrows,
+                    ' <span class="st-warn">Reboot pending.</span>'
+                    if pend else ""))
         if admin:
             hwsec += ('<form method="post" action="/config/wifi" '
                       'onsubmit="return confirm('
@@ -2899,8 +2942,10 @@ interface via wpa_supplicant. Status: <b>%s / %s</b></p>
                       '<input type="hidden" name="act" value="reboot">'
                       '<button class="btn dan" type="submit">Reboot Now'
                       '</button></form>' % csrf)
-    wlifaces = net_ifaces(("wl",))
-    wradio, wconn, has_nm = wifi_status()
+    else:
+        hwsec = ('<p class="note" style="margin-top:18px">Boot config '
+                 '(config.txt) not found &mdash; onboard radio toggles '
+                 'unavailable.</p>')
     if not has_nm:
         wcard = """<div class="card"><h3>WiFi Setup</h3><div class="pad">
 <p class="note">NetworkManager (nmcli) is not installed — onboard WiFi
