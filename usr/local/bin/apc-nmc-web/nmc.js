@@ -362,3 +362,29 @@ function nmcPwScore(p) {
         lab.textContent = f.value ? lbls[s] : '';
     });
 })();
+
+
+/* ------------------------------------------------------------------ *
+ * 8. Fragment swap - replace a live region with the server's new      *
+ *    fragment, but diff table rows first so only changed cells        *
+ *    repaint. Whole-innerHTML swaps steal focus/selection and jiggle  *
+ *    layout every poll; unchanged content is never touched.           *
+ * ------------------------------------------------------------------ */
+function nmcSwap(el, html) {
+    if (el._lastFrag === html) return false;
+    el._lastFrag = html;
+    var tmp = el.cloneNode(false);
+    tmp.innerHTML = html;
+    var o = el.querySelectorAll('tr'), n = tmp.querySelectorAll('tr');
+    if (o.length && o.length === n.length) {
+        for (var i = 0; i < n.length; i++) {
+            if (o[i].textContent !== n[i].textContent) {
+                o[i].innerHTML = n[i].innerHTML;
+            }
+        }
+    } else if (o.length !== n.length ||
+               el.textContent !== tmp.textContent) {
+        el.innerHTML = html;
+    }
+    return true;
+}

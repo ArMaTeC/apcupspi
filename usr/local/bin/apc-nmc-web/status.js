@@ -21,9 +21,7 @@ setInterval(function () {
                 // attribute quoting) so innerHTML !== server string even
                 // when nothing changed, causing a swap + repaint flicker
                 // every poll.
-                if (el && el._lastFrag !== f[k]) {
-                    el._lastFrag = f[k];
-                    el.innerHTML = f[k];
+                if (el && nmcSwap(el, f[k])) {
                     var t = el.closest('table');
                     if (t && t._apply) t._apply();
                 }

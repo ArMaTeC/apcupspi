@@ -53,9 +53,7 @@ setInterval(function () {
                 // normalized by the browser so it never equals the
                 // server string even when nothing changed (repaint
                 // flicker every poll)
-                if (el && el._lastFrag !== f[k]) {
-                    el._lastFrag = f[k];
-                    el.innerHTML = f[k];
+                if (el && nmcSwap(el, f[k])) {
                     // flash only the text-y fragments, not whole tables
                     if (k === 'hs' || k === 'ht') {
                         el.classList.remove('uv');
