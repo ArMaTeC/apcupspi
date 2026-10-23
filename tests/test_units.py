@@ -305,3 +305,16 @@ def test_wifi_scan_parse():
     assert nets[0]["signal"] == 99            # strongest dup wins
     web._nmcli = lambda *a, timeout=15: (1, "err")
     assert web.wifi_scan() == []              # nmcli failure -> []
+
+
+def test_datalog_page():
+    data = [{"ts": i} for i in range(10)]     # stored oldest -> newest
+    p = web.datalog_page(data, 0, 3)
+    assert p["total"] == 10
+    assert [r["ts"] for r in p["rows"]] == [9, 8, 7]   # newest first
+    p = web.datalog_page(data, 8, 3)
+    assert [r["ts"] for r in p["rows"]] == [1, 0]      # partial last page
+    p = web.datalog_page(data, 20, 3)
+    assert p["rows"] == []                     # past end -> empty
+    p = web.datalog_page(data, -5, 3)
+    assert [r["ts"] for r in p["rows"]] == [9, 8, 7]   # neg off clamps

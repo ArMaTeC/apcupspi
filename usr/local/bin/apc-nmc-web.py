@@ -1453,6 +1453,13 @@ def load_data():
         return []
 
 
+def datalog_page(data, off, lim):
+    """Newest-first slice of the datalog for lazy loading the table."""
+    off = max(0, off)
+    return {"total": len(data),
+            "rows": list(reversed(data))[off:off + lim]}
+
+
 # ============================================================ helpers
 def toks(d):
     ts = set(d.get("ups.status", "").split())
@@ -2872,20 +2879,9 @@ def pg_events(d, msg=""):
 
 
 def pg_data():
-    data = load_data()
-    rows = ""
-    for r in reversed(data):
-        cells = "".join("<td>%s</td>" % esc(r.get(k, "-")) for k in
-                        ("battery.charge", "ups.load", "ups.realpower",
-                         "input.voltage", "output.voltage",
-                         "battery.temperature", "st"))
-        rows += ("<tr><td>%s</td><td>%s</td>%s</tr>"
-                 % (time.strftime("%m/%d/%Y", time.localtime(r["ts"])),
-                    time.strftime("%H:%M", time.localtime(r["ts"])), cells))
-    if not rows:
-        rows = ('<tr><td colspan="9" class="note">No samples yet &mdash; '
-                'the data log starts filling within a minute of service '
-                'start.</td></tr>')
+    # Rows are lazy-loaded by datalog.js via /datalog.json?off=&lim= —
+    # the full log can be ~1500 samples, far too much markup to inline.
+    total = len(load_data())
     es = energy_stats()
     ecard = ""
     if es["span_h"]:
@@ -2924,14 +2920,17 @@ def pg_data():
 <div class="note" id="dllbl" style="margin-top:6px"></div>
 </div></div>
 <div class="card"><div class="pad">
-<table class="ev"><tr><th>Date</th><th>Time</th><th>Charge %%</th>
+<table class="ev"><thead><tr><th>Date</th><th>Time</th><th>Charge %%</th>
 <th>Load %%</th><th>Watts</th><th>In V</th><th>Out V</th><th>Temp &deg;C</th>
-<th>Status</th></tr>%s</table>
+<th>Status</th></tr></thead>
+<tbody id="dlrows"><tr><td colspan="9" class="note">Loading&hellip;</td></tr></tbody></table>
+<div id="dlsent" style="height:1px"></div>
 <div style="margin-top:14px"><a class="btn sec" href="/data.txt">Download data.txt</a>
 <a class="btn sec" href="/data.txt?fmt=csv" style="margin-left:8px">Download CSV</a>
-<span class="note" style="margin-left:10px">Sampled every 60 s, newest first &mdash; %s samples shown.</span></div>
+<a class="btn sec" id="dlmore" style="margin-left:8px;display:none">Load more</a>
+<span class="note" id="dlnote" style="margin-left:10px">Sampled every 60 s, newest first &mdash; %s samples.</span></div>
 </div></div>
-<script>%s</script>""" % (ecard, rows, len(data), _asset("datalog.js"))
+<script>%s</script>""" % (ecard, total, _asset("datalog.js"))
 
 
 def pg_about(d, msg: "str | tuple" = ""):
@@ -4713,8 +4712,17 @@ class H(BaseHTTPRequestHandler):
                 (p == "/config/backup" and role != "admin"):
             return self._page(403, pg_403(), {}, p)
         if p == "/datalog.json":
-            return self._send(200, json.dumps(load_data()),
-                              "application/json")
+            data = load_data()
+            q = parse_qs(urlparse(self.path).query)
+            if "off" in q or "lim" in q:
+                try:
+                    off = int(q.get("off", ["0"])[0])
+                    lim = min(500, max(1, int(q.get("lim", ["150"])[0])))
+                except ValueError:
+                    off, lim = 0, 150
+                return self._send(200, json.dumps(
+                    datalog_page(data, off, lim)), "application/json")
+            return self._send(200, json.dumps(data), "application/json")
         if p == "/config/wifi/scan":
             q = parse_qs(urlparse(self.path).query)
             return self._send(200, json.dumps(

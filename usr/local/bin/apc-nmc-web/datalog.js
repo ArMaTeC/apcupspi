@@ -71,4 +71,94 @@
             document.getElementById('dllbl').textContent =
                 'Chart unavailable.';
         });
+
+    // ---- paged table, lazy loaded ------------------------------------
+    // Rows come from /datalog.json?off=&lim= (newest first) a page at a
+    // time; an IntersectionObserver on #dlsent fetches the next page as
+    // the bottom of the table scrolls into view. #dlmore is the manual
+    // fallback for browsers without IntersectionObserver.
+    var TB = document.getElementById('dlrows');
+    if (!TB) return;
+    var PAGE = 150, off = 0, total = Infinity, busy = false, done = false;
+    var sent = document.getElementById('dlsent');
+    var btn = document.getElementById('dlmore');
+    var note = document.getElementById('dlnote');
+    var KEYS = ['battery.charge', 'ups.load', 'ups.realpower',
+                'input.voltage', 'output.voltage',
+                'battery.temperature', 'st'];
+
+    function pad2(n) { return (n < 10 ? '0' : '') + n; }
+
+    function td(t) {
+        var d = document.createElement('td');
+        d.textContent = t;
+        return d;
+    }
+
+    function mkrow(r) {
+        var tr = document.createElement('tr');
+        var d = new Date(r.ts * 1000);
+        tr.appendChild(td(pad2(d.getMonth() + 1) + '/' + pad2(d.getDate()) +
+                          '/' + d.getFullYear()));
+        tr.appendChild(td(pad2(d.getHours()) + ':' + pad2(d.getMinutes())));
+        KEYS.forEach(function (k) {
+            var v = r[k];
+            tr.appendChild(td(v === undefined || v === null || v === '' ?
+                              '-' : String(v)));
+        });
+        return tr;
+    }
+
+    function updateNote() {
+        if (note && total !== Infinity)
+            note.textContent = 'Sampled every 60 s, newest first \u2014 ' +
+                off + ' of ' + total + ' samples shown.';
+    }
+
+    function finish() {
+        done = true;
+        if (btn) btn.style.display = 'none';
+        if (sent && sent.parentNode) sent.parentNode.removeChild(sent);
+        if (off === 0)
+            TB.innerHTML = '<tr><td colspan="9" class="note">No samples ' +
+                'yet &mdash; the data log starts filling within a minute ' +
+                'of service start.</td></tr>';
+    }
+
+    function loadMore() {
+        if (busy || done) return;
+        busy = true;
+        fetch('/datalog.json?off=' + off + '&lim=' + PAGE)
+            .then(function (r) { return r.json(); })
+            .then(function (p) {
+                total = p.total;
+                if (off === 0) TB.textContent = '';
+                p.rows.forEach(function (r) { TB.appendChild(mkrow(r)); });
+                off += p.rows.length;
+                updateNote();
+                if (!p.rows.length || off >= total) finish();
+                busy = false;
+            })
+            .catch(function () {
+                busy = false;
+                if (off === 0)
+                    TB.innerHTML = '<tr><td colspan="9" class="note">' +
+                        'Failed to load samples.</td></tr>';
+            });
+    }
+
+    if (btn) {
+        btn.addEventListener('click', loadMore);
+        if (!('IntersectionObserver' in window))
+            btn.style.display = '';
+    }
+    if ('IntersectionObserver' in window && sent) {
+        var io = new IntersectionObserver(function (entries) {
+            entries.forEach(function (e) {
+                if (e.isIntersecting) loadMore();
+            });
+        });
+        io.observe(sent);
+    }
+    loadMore();                                   // first page right away
 })();
