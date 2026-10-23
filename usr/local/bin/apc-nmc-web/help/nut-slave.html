@@ -1,0 +1,47 @@
+<h2>Connecting Servers via NUT (upsd)</h2>
+<p>This card runs a full NUT server — any host that understands NUT can
+monitor and safely shut down from the UPS, the same role a vendor tool
+such as PowerChute Network Shutdown would fill. There is no APC-proprietary
+protocol: every client speaks the open NUT protocol to
+<code>upsd</code> on TCP <code>3493</code>.</p>
+
+<h3>How it works</h3>
+<table class="kv">
+<tr><td>Card</td><td>Runs <b>upsd</b> (NUT server) on <code>:3493</code>;
+the UPS driver (<code>apc_modbus</code>) feeds it telemetry and executes
+commands.</td></tr>
+<tr><td>Clients</td><td>Run <b>upsmon</b> (NUT monitor) configured as a
+slave of this card — it watches status and shuts down cleanly on
+low battery.</td></tr>
+</table>
+
+<h3>Client setup (Linux, NUT)</h3>
+<p>Install <code>nut-client</code> on the server and edit
+<code>/etc/nut/upsmon.conf</code>:</p>
+<pre class="note" style="padding:10px">MONITOR myups@&lt;card-ip&gt; 1 upsmon &lt;password&gt; slave
+SHUTDOWNCMD "/sbin/shutdown -h +0"</pre>
+<p>Credentials come from the card's <code>/etc/nut/upsd.users</code>
+(generated at install — see README). The slave flag means this host
+waits for the card's shutdown signal rather than deciding alone.</p>
+
+<h3>Flood protection</h3>
+<p>upsd has no per-client rate limits. If many hosts poll
+<code>status.json</code> instead of upsmon, keep intervals ≥ 15&nbsp;s.
+The dedicated NUT protocol is lightweight and scales to dozens of
+upsmon slaves.</p>
+
+<h3>PowerChute / Windows</h3>
+<p>PowerChute Network Shutdown expects APC's proprietary protocol and
+cannot pair with this card. Windows hosts can use <b>NUT for Windows</b>
+(WinNUT) or <b>apcupsd</b> in NIS mode pointed at
+<code>myups@&lt;card-ip&gt;</code> — both speak NUT.</p>
+
+<h3>Verifying</h3>
+<ul>
+<li><code>upsc myups@&lt;card-ip&gt;</code> from a client lists live UPS
+variables.</li>
+<li>Client-side <code>upsc myups@&lt;card-ip&gt; ups.status</code>
+should show <code>OL</code> (online) — <code>OB</code> on battery.</li>
+<li>On low battery the card's event log records the transfer and every
+slave receives FSD (forced shutdown) when the card raises it.</li>
+</ul>

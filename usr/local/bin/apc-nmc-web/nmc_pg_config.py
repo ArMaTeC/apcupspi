@@ -494,7 +494,16 @@ Home Assistant, Node-RED and similar consumers.%s</p>
 <tr><td class="lbl">Interval (s)<span class="tip" title="Seconds between state publishes — 15 to 86400">?</span></td><td><input name="mq_interval" type="number" min="15" max="86400" value="%s"></td></tr>
 </table><div style="margin-top:12px"><button class="btn">Apply</button>
 <button class="btn sec" name="mq_test" value="1" style="margin-left:8px">Save &amp; Test Publish</button></div>
-</form>%s</div></div>""" % (
+</form>%s
+<h4 style="margin:22px 0 8px">Data Logging</h4>
+<p class="mut" style="margin-top:0">Power-metrics history driving the
+Data Log chart and the energy stats &mdash; one sample per minute.</p>
+<form method="post" action="/config/datalog">
+%s<table class="kv">
+<tr><td class="lbl">Retention (hours)<span class="tip" title="Samples older than this are dropped — 24 to 720; larger spans increase chart history but SD writes">?</span></td><td><input name="dl_hours" type="number" min="24" max="720" value="%s"></td></tr>
+<tr><td class="lbl">Write Batch<span class="tip" title="Samples buffered in RAM before each SD flush — higher means fewer card writes">?</span></td><td><input name="dl_batch" type="number" min="1" max="200" value="%s"></td></tr>
+</table><div style="margin-top:12px"><button class="btn">Apply</button></div>
+</form></div></div>""" % (
         so,
         "enabled" if mb_en else "disabled",
         "active" if mb_act else "stopped",
@@ -523,7 +532,10 @@ Home Assistant, Node-RED and similar consumers.%s</p>
         " checked" if mqtt_cfg()["insecure"] else "",
         esc(mqtt_cfg()["user"]), esc(mqtt_cfg()["topic"]),
         esc(str(mqtt_cfg()["interval"])),
-        sc)
+        sc,
+        csrf,
+        esc(str(cfg_get("datalog_hours", 25))),
+        esc(str(cfg_get("datalog_batch", 15))))
 
     # ---- firewall -------------------------------------------------------
     fw_en, fw_act = svc_state("apc-nmc-firewall.service")
@@ -728,7 +740,34 @@ fetch('/config/wifi/scan?if='+encodeURIComponent(
 provisioning by hand &mdash; see docs/secure-boot.md. It cannot be
 enabled from this interface.</p></div></div>""" % esc(sb)
 
+    # ---- time & date ---------------------------------------------------
+    _rc, tzs = _run(["timedatectl", "show", "-p", "Timezone", "-p",
+                     "NTP", "-p", "NTPSynchronized"], 10)
+    tcur = ntp_on = ntp_ok = ""
+    for ln in tzs.splitlines():
+        if ln.startswith("Timezone="):
+            tcur = ln.split("=", 1)[1]
+        elif ln.startswith("NTP="):
+            ntp_on = ln.split("=", 1)[1] in ("yes", "true")
+        elif ln.startswith("NTPSynchronized="):
+            ntp_ok = ("synchronized" if ln.endswith("=yes")
+                      else "not synchronized")
+    tzo, tzc = rof("/config/time")
+    tcard = """<div class="card"><h3>Time &amp; Date</h3><div class="pad">%s
+<p class="mut" style="margin-top:0">Card clock — drives the logs,
+schedules and certificate validity. NTP sync: <b>%s</b></p>
+<form method="post" action="/config/time"><table class="kv">
+%s
+<tr><td class="lbl">Timezone<span class="tip" title="IANA zone name (e.g. Europe/London) — affects log timestamps and weekly schedules">?</span></td><td><input name="tz" list="tzlist" maxlength="64" value="%s">
+<datalist id="tzlist">%s</datalist></td></tr>
+<tr><td class="lbl">NTP Sync<span class="tip" title="Synchronise the clock from network time servers (systemd-timesyncd)">?</span></td><td><label class="f" style="font-weight:normal"><input type="checkbox" name="ntp" value="1"%s> enabled</label></td></tr>
+</table><div style="margin-top:12px"><button class="btn">Apply</button></div>
+</form>%s</div></div>""" % (
+        tzo, esc(ntp_ok or "?"), csrf_input(d), esc(tcur),
+        "".join('<option value="%s">' % esc(z) for z in timezones()),
+        " checked" if ntp_on else "", tzc)
+
     return """<h1 class="page">System Configuration</h1>%s
-%s%s%s%s%s""" % (m, scard, fwcard, dxcard, wcard, sbcard)
+%s%s%s%s%s%s""" % (m, scard, fwcard, dxcard, wcard, sbcard, tcard)
 
 

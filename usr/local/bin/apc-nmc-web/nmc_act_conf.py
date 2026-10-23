@@ -584,3 +584,45 @@ def do_wifi(form):
     return ("msg-err", "Connect failed: %s" % esc(out))
 
 
+
+
+def do_ntp(form):
+    """Apply timezone / NTP-enable via timedated (timedatectl)."""
+    def v(name):
+        return form.get(name, [""])[0].strip()
+    msgs = []
+    tz = v("tz")
+    if tz:
+        if not re.fullmatch(r"[A-Za-z0-9_+\-/]{2,64}", tz) or ".." in tz:
+            msgs.append("timezone: invalid name")
+        else:
+            rc, out = _run(["timedatectl", "set-timezone", tz], 15)
+            if rc != 0:
+                msgs.append("timezone: %s"
+                            % (out.strip() or "rejected"))
+    rc, out = _run(["timedatectl", "set-ntp",
+                    "true" if v("ntp") in ("1", "on") else "false"],
+                   15)
+    if rc != 0:
+        msgs.append("NTP: %s" % (out.strip() or "rejected"))
+    if msgs:
+        return ("msg-err", "; ".join(msgs))
+    log_event("NMC: Time settings changed via the management card.")
+    return ("msg-ok", "Time settings applied.")
+
+
+def do_datalog(form):
+    """Data-log retention: how many hours of 60s samples to keep and
+    how many to batch before flushing to the SD card."""
+    def v(name):
+        return form.get(name, [""])[0].strip()
+    for key, lo, hi, cfgk in (("dl_hours", 1, 24 * 30, "datalog_hours"),
+                              ("dl_batch", 1, 200, "datalog_batch")):
+        val = v(key)
+        if not val:
+            continue
+        if not re.fullmatch(r"\d+", val) or not lo <= int(val) <= hi:
+            return ("msg-err", "%s: must be %d-%d" % (key, lo, hi))
+        cfg_set(cfgk, int(val))
+    log_event("NMC: Data-log settings changed via the management card.")
+    return ("msg-ok", "Data-log settings saved.")

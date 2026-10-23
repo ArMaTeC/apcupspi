@@ -301,3 +301,64 @@ window.addEventListener('beforeunload', function (e) {
         e.returnValue = '';
     }
 });
+
+
+/* ------------------------------------------------------------------ *
+ * 6. Event-log auto-refresh - persisted in localStorage so the        *
+ *    choice survives the reload it triggers.                          *
+ * ------------------------------------------------------------------ */
+(function () {
+    var cb = document.getElementById('evrefresh');
+    if (!cb) return;
+    cb.checked = localStorage.getItem('nmc-evrefresh') === '1';
+    if (cb.checked) {
+        setTimeout(function () { location.reload(); }, 60000);
+    }
+    cb.addEventListener('change', function () {
+        localStorage.setItem('nmc-evrefresh', cb.checked ? '1' : '0');
+        if (cb.checked) {
+            setTimeout(function () { location.reload(); }, 60000);
+        }
+    });
+})();
+
+
+/* ------------------------------------------------------------------ *
+ * 7. Password strength meter - heuristic bar under the new-password   *
+ *    field (length + char classes; not a dictionary check).           *
+ * ------------------------------------------------------------------ */
+function nmcPwScore(p) {
+    var s = 0;
+    if (p.length >= 8) s++;
+    if (p.length >= 12) s++;
+    if (/[a-z]/.test(p) && /[A-Z]/.test(p)) s++;
+    if (/\d/.test(p)) s++;
+    if (/[^a-zA-Z0-9]/.test(p)) s++;
+    return s;   /* 0..5 */
+}
+(function () {
+    var f = document.querySelector('input[name="newp"]');
+    if (!f) return;
+    var bar = document.createElement('div');
+    bar.style.cssText = 'height:5px;border-radius:3px;margin-top:6px;' +
+        'background:var(--brd,#444);width:160px';
+    var fill = document.createElement('div');
+    fill.style.cssText = 'height:100%;border-radius:3px;width:0;' +
+        'transition:width .2s,background .2s';
+    bar.appendChild(fill);
+    var lab = document.createElement('span');
+    lab.className = 'note';
+    lab.style.marginLeft = '8px';
+    f.parentNode.appendChild(bar);
+    f.parentNode.appendChild(lab);
+    f.addEventListener('input', function () {
+        var s = nmcPwScore(f.value),
+            cols = ['#b00020', '#b00020', '#e0a800', '#e0a800',
+                    '#3dcd58', '#3dcd58'],
+            lbls = ['very weak', 'weak', 'fair', 'fair', 'good',
+                    'strong'];
+        fill.style.width = (f.value ? 20 + s * 16 : 0) + '%';
+        fill.style.background = cols[s];
+        lab.textContent = f.value ? lbls[s] : '';
+    });
+})();

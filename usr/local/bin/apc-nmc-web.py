@@ -450,7 +450,14 @@ def wifi_status():
         if dev.startswith("wl"):
             conn = name
             break
-    return radio or "unknown", conn, True
+    sig = ""
+    if conn:
+        _rc, out = _nmcli("-t", "-f", "IN-USE,SIGNAL", "dev", "wifi")
+        for ln in out.splitlines():
+            if ln.startswith("*:"):
+                sig = ln.split(":", 1)[1].strip() + "%"
+                break
+    return radio or "unknown", conn + (" (%s)" % sig if sig else ""), True
 
 
 BOOTCFGS = ("/boot/firmware/config.txt", "/boot/config.txt")
@@ -517,6 +524,18 @@ def wifi_scan(ifname=""):
             nets[ssid] = {"ssid": ssid, "signal": sig,
                           "security": secu}
     return sorted(nets.values(), key=lambda n: -n["signal"])[:20]
+
+
+_tz_cache = {"list": [], "at": 0}
+
+
+def timezones():
+    """timedatectl's zone list, cached for 5 min (it's ~500 entries)."""
+    if not _tz_cache["list"] or time.time() - _tz_cache["at"] > 300:
+        _rc, out = _run(["timedatectl", "list-timezones"], 15)
+        if out:
+            _tz_cache.update(list=out.splitlines(), at=time.time())
+    return _tz_cache["list"]
 
 
 def secure_boot_status():
@@ -635,13 +654,13 @@ ROLE_CAPS = {
                  ("/config/notify", "/config/notify/test")),
     "network":  ("Network Services",
                  ("/config/services", "/config/firewall",
-                  "/config/dot1x", "/config/wifi")),
+                  "/config/dot1x", "/config/wifi", "/config/datalog")),
     "accounts": ("Accounts & RADIUS",
                  ("/config/users", "/config/radius", "/config/roles")),
     "system":   ("System & Updates",
                  ("/config/sessions", "/config/backup", "/config/restore",
                   "/config/support", "/log/clear", "/about/update/",
-                  "/config/wifi/hw")),
+                  "/about/sysact", "/config/time", "/config/wifi/hw")),
 }
 ROLE_CAP_DEFAULTS = {
     "device": ("ups", "control"),
@@ -1421,6 +1440,20 @@ def mqtt_publisher():
                 pl = json.dumps({"ts": int(time.time()), **{
                     k: d[k] for k in _MQTT_VARS if k in d}})
                 ok, err = mqtt_send(pl)
+                try:   # HA-friendly plain-text companions of the JSON
+                    port = int(m["port"] or 1883)
+                    mqtt_publish(m["host"], port,
+                                 m["topic"] + "/status",
+                                 d.get("ups.status", ""),
+                                 user=m["user"], pw=m["pass"],
+                                 tls=m["tls"], insecure=m["insecure"])
+                    mqtt_publish(m["host"], port,
+                                 m["topic"] + "/availability",
+                                 "online" if ups_live(d) else "offline",
+                                 user=m["user"], pw=m["pass"],
+                                 tls=m["tls"], insecure=m["insecure"])
+                except Exception:
+                    pass
                 _mqtt_state.update(ok=ok, err=err,
                                    n=_mqtt_state["n"] + 1,
                                    at=int(time.time()) if ok
@@ -1591,6 +1624,7 @@ def status_poller():
                     _run_hook(flag, "off", " ".join(sorted(ts)))
             if "OB" in ts and "OB" not in prev:
                 save_state({"last_transfer": time.strftime("%m/%d/%Y %H:%M:%S")})
+        _ob_since(d, ok)
         _auto_unmute_beeper(d, ok)
         prev = ts
         time.sleep(10)
@@ -1757,6 +1791,87 @@ def fmt_runtime(d):
         return "unknown"
 
 
+def battery_health(d):
+    """Composite 0-100 battery-health score: install age (5y+ = worst),
+    replace flag, last self-test result, and low charge. None when no
+    battery data exists at all."""
+    if not any(k in d for k in ("battery.charge", "battery.voltage",
+                                "battery.test.result")):
+        return None
+    score = 100
+    age = battery_age_years()
+    if age is not None:
+        score -= min(40, int(age / 5 * 40))
+    if "RB" in toks(d):
+        score -= 30
+    res = str(d.get("battery.test.result", "")).lower()
+    if "fail" in res or "abort" in res or "bad" in res:
+        score -= 30
+    elif "warn" in res:
+        score -= 15
+    chg = num(d, "battery.charge")
+    if chg is not None and chg < 60:
+        score -= int((60 - chg) / 2)
+    score = max(0, min(100, score))
+    label = ("Good" if score >= 80 else
+             "Fair" if score >= 50 else "Poor")
+    return score, label
+
+
+def card_health():
+    """Pi-side vitals for status.json / support: uptime, load, SoC temp."""
+    out = {}
+    try:
+        with open("/proc/uptime") as f:
+            up = int(float(f.read().split()[0]))
+        d, rem = divmod(up, 86400)
+        h, m = divmod(rem // 60, 60)
+        out["sys.uptime"] = ("%dd " % d if d else "") + "%dh %dm" % (h, m)
+    except (OSError, ValueError, IndexError):
+        pass
+    try:
+        out["sys.loadavg"] = " ".join(
+            "%.2f" % x for x in os.getloadavg())
+    except OSError:
+        pass
+    for tz in ("/sys/class/thermal/thermal_zone0/temp",):
+        try:
+            with open(tz) as f:
+                out["sys.cputemp"] = "%.1f" % (int(f.read()) / 1000.0)
+            break
+        except (OSError, ValueError):
+            continue
+    return out
+
+
+def _ob_since(d, ok):
+    """Epoch the UPS went on battery (persisted in state.json), or None."""
+    st = load_state()
+    if "OB" in toks(d):
+        if not st.get("ob_since"):
+            cfg_set("ob_since", int(time.time()))
+            return int(time.time())
+        return st.get("ob_since")
+    if st.get("ob_since"):
+        cfg_set("ob_since", "")
+    return None
+
+
+def sched_next(wd_s, hr_s):
+    """Epoch of the next weekly fire time for weekday+hour cfg, or None."""
+    try:
+        wd, hr = int(wd_s), int(hr_s)
+    except (ValueError, TypeError):
+        return None
+    now = time.localtime()
+    days = (wd - now.tm_wday) % 7
+    cand = time.mktime((now.tm_year, now.tm_mon, now.tm_mday + days,
+                      hr, 0, 0, -1, -1, -1))
+    if cand <= time.time():
+        cand += 7 * 86400
+    return cand
+
+
 def ups_live(d):
     """Live UPS data = upsd answered AND the driver has polled the UPS —
     ups.status is always published after a successful poll. A var set
@@ -1915,6 +2030,7 @@ HELP_TOPICS = [
     ("network", "About: Network & Host", "Interface info, Pi health, NUT vars"),
     ("about", "About, Updates & Support", "Versions, updates, API token, bundle"),
     ("api", "API & Integrations", "JSON API, metrics, MQTT, Modbus, SNMP"),
+    ("nut-slave", "Connecting Servers (NUT)", "upsd slaves, PowerChute alternatives"),
     ("roles", "User Roles", "The four access tiers"),
     ("troubleshooting", "Troubleshooting", "Common problems and fixes"),
     ("glossary", "Glossary", "Status codes and terms"),
@@ -2190,6 +2306,7 @@ class H(BaseHTTPRequestHandler):
         d["sys.updstate"] = update_status_view(
             _load_json(UPDATE_STATUS)).get("state", "")
         d["sys.ts"] = str(int(time.time()))
+        d.update(card_health())
         return d
 
     def _safe_next(self, f):
@@ -2292,6 +2409,9 @@ class H(BaseHTTPRequestHandler):
                 except Exception:
                     cmds = []
                 return self._send(200, json.dumps(cmds), "application/json")
+            if p == "/api/v1/events" and self._api_ok():
+                return self._send(200, json.dumps(load_events()),
+                                  "application/json")
             # machine-readable routes get a real 401, not a login-HTML
             # redirect that scripts would happily follow (ISS-045)
             if p.startswith("/api/") or p.endswith((".json", ".txt")) \
@@ -2400,6 +2520,9 @@ class H(BaseHTTPRequestHandler):
             except Exception:
                 cmds = []
             return self._send(200, json.dumps(cmds), "application/json")
+        if p == "/api/v1/events":
+            return self._send(200, json.dumps(load_events()),
+                              "application/json")
         d["__csrf"] = sess["csrf"]
         d["__role"] = role
         # plain text — the page template esc()es this, so an HTML
@@ -2730,6 +2853,9 @@ class H(BaseHTTPRequestHandler):
                              ("/config/firewall", do_firewall,
                               "/config/system"),
                              ("/config/dot1x", do_dot1x, "/config/system"),
+                             ("/config/datalog", do_datalog,
+                              "/config/system"),
+                             ("/config/time", do_ntp, "/config/system"),
                              ("/config/wifi", do_wifi, "/config/system")):
             if p == pp:
                 try:
@@ -2785,6 +2911,15 @@ class H(BaseHTTPRequestHandler):
             except Exception:
                 traceback.print_exc()
                 res = ("msg-err", "Token operation failed")
+            return self._redir("/about/system?r=%s&why=%s" % (
+                "ok" if res[0] == "msg-ok" else "err", quote(res[1])))
+        if p == "/about/sysact":
+            try:
+                res = do_sysact(f.get("act", [""])[0],
+                                sess.get("user"))
+            except Exception:
+                traceback.print_exc()
+                res = ("msg-err", "Action failed")
             return self._redir("/about/system?r=%s&why=%s" % (
                 "ok" if res[0] == "msg-ok" else "err", quote(res[1])))
         if p == "/about/update/apply":

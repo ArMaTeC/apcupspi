@@ -125,6 +125,10 @@ _KV_TIPS = {
     "Battery Install Date": "Recorded install/replace date — reset with 'Battery Replaced'",
     "Next Battery Maintenance": "Suggested next battery service date",
     "Battery Age": "Age since the recorded install/replace date",
+    "Battery Health": "Composite 0-100 score from battery age, "
+                      "replace flag, last self-test and charge",
+    "Time On Battery": "How long the UPS has been on battery this "
+                       "transfer",
     "UPS Alarm": "Active alarm conditions reported by the UPS",
     "Audible Alarm": "State of the UPS beeper",
     "Transfers to Battery": "How many times the UPS has switched to battery",
@@ -152,11 +156,21 @@ _KV_TIPS = {
 }
 
 
+_KV_CPY = frozenset(("Serial Number", "UPS Identifier", "Firmware",
+                     "Model", "MAC Address"))
+
+
 def kv(label, val):
     t = _KV_TIPS.get(label)
     badge = ('<span class="tip" title="%s">?</span>' % esc(t)) if t else ""
-    return ('<tr><td class="lbl">%s%s</td><td>%s</td></tr>'
-            % (esc(label), badge, val))
+    cpy = ""
+    if label in _KV_CPY:
+        cpy = (' <button type="button" onclick="nmcCopy(this)" '
+               'data-tok="%s" title="Copy" style="background:none;'
+               'border:none;cursor:pointer;padding:0 4px;font-size:12px">'
+               '&#x2398;</button>' % esc(re.sub(r"<[^>]+>", "", str(val))))
+    return ('<tr><td class="lbl">%s%s</td><td>%s%s</td></tr>'
+            % (esc(label), badge, val, cpy))
 
 
 def _v(d, key, fmt="%s"):
@@ -195,6 +209,17 @@ def _status_frags(d):
                   "%.1f years" % age if age < 3 else
                   '<span style="color:#b00020">%.1f years &mdash; '
                   'consider replacement</span>' % age)
+    bh = battery_health(d)
+    if bh is not None:
+        sc, bl = bh
+        col = "#3dcd58" if sc >= 80 else "#e0a800" if sc >= 50 \
+            else "#b00020"
+        top += kv("Battery Health",
+                  '<b style="color:%s">%s</b> (%d/100)' % (col, bl, sc))
+    obs = load_state().get("ob_since")
+    if "OB" in toks(d) and obs:
+        el = int(time.time() - obs)
+        top += kv("Time On Battery", "%dh %dm" % divmod(el // 60, 60))
     if d.get("ups.alarm"):
         top += kv("UPS Alarm",
                   '<span style="color:#b00020">%s</span>'
@@ -588,10 +613,12 @@ def pg_tests(d, msg: "str | tuple" = ""):
         sched = """<div class="card"><h3>Scheduling</h3><div class="pad">
 <form method="post" action="/test/schedule"><table class="kv">
 <tr><td class="lbl">Weekly Self-Test<span class="tip" title="Run a battery self-test automatically on this day/hour (server local time)">?</span></td><td>%s at %s</td></tr>
+<tr><td class="lbl">Next Self-Test<span class="tip" title="When the weekly self-test will next run">?</span></td><td>%s</td></tr>
 </table><h4 style="margin:18px 0 8px">Scheduled UPS Power-Off</h4>
 <table class="kv">
 <tr><td class="lbl">When<span class="tip" title="Day and hour of the scheduled UPS power-off — once per week">?</span></td><td>%s at %s</td></tr>
 <tr><td class="lbl">After Power-Off<span class="tip" title="Return when power is restored vs. stay off until manually restarted">?</span></td><td><select name="sd_mode">%s</select></td></tr>
+<tr><td class="lbl">Next Run<span class="tip" title="When the scheduled power-off will next fire">?</span></td><td>%s</td></tr>
 </table><p class="note" style="margin-top:8px">Fires once per matching
 day. "Return when power is restored" sends shutdown.return; "stay off"
 sends shutdown.stayoff &mdash; the UPS then needs a manual restart.</p>
@@ -599,8 +626,16 @@ sends shutdown.stayoff &mdash; the UPS then needs a manual restart.</p>
 <button class="btn">Save Schedules</button></div></form></div></div>""" % (
             wdsel("st_wd", cfg("schedule", "selftest_weekday", "")),
             hrsel("st_hr", cfg("schedule", "selftest_hour", "")),
+            (time.strftime("%a %d %b %H:%M", time.localtime(nsx))
+             if (nsx := sched_next(
+                 cfg("schedule", "selftest_weekday", ""),
+                 cfg("schedule", "selftest_hour", ""))) else "&mdash;"),
             wdsel("sd_wd", cfg("schedule", "shutdown_weekday", "")),
             hrsel("sd_hr", cfg("schedule", "shutdown_hour", "")),
+            (time.strftime("%a %d %b %H:%M", time.localtime(nx))
+             if (nx := sched_next(
+                 cfg("schedule", "shutdown_weekday", ""),
+                 cfg("schedule", "shutdown_hour", ""))) else "&mdash;"),
             "".join('<option value="%s"%s>%s</option>' % (
                 v, " selected" if v == smode else "", lbl)
                 for v, lbl in (("return",

@@ -295,3 +295,20 @@ def do_update_apply():
     return ("msg-ok", "")
 
 
+
+
+def do_sysact(act, user=None):
+    """Card-level actions: reboot the Pi or restart the web service —
+    deferred briefly so the response page renders first."""
+    if act == "reboot":
+        log_event("NMC: Card reboot requested by %s." % (user or "?"))
+        _reboot_later()
+        return ("msg-ok", "Card is rebooting — reconnect in a minute.")
+    if act == "restart-web":
+        log_event("NMC: Web interface restart requested by %s."
+                  % (user or "?"))
+        threading.Timer(
+            1.0, lambda: _sysctl("restart", "apc-nmc-web")).start()
+        return ("msg-ok",
+                "Interface is restarting — reload in a few seconds.")
+    return ("msg-err", "unknown action")

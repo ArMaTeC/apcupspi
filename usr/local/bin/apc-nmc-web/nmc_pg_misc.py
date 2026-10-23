@@ -42,13 +42,33 @@ def pg_help(d, slug):
 def pg_events(d, msg=""):
     evs = load_events()
     m = msgbox(msg)
+    now = time.time()
+
+    def rel(ts):
+        el = int(now - ts)
+        if el < 60:
+            return "just now"
+        if el < 3600:
+            return "%dm ago" % (el // 60)
+        if el < 86400:
+            return "%dh ago" % (el // 3600)
+        return "%dd ago" % (el // 86400)
+
+    sevs = {"crit": 0, "warn": 0, "info": 0}
+    for e in evs:
+        sevs[e.get("sev", "info")] = sevs.get(e.get("sev", "info"), 0) + 1
+    counts = ("<span class='note'>%d critical &middot; %d warning "
+              "&middot; %d info</span>"
+              % (sevs.get("crit", 0), sevs.get("warn", 0),
+                 sevs.get("info", 0)))
     rows = "".join(
         "<tr data-sev='%s'><td><span class='dot %s'></span></td>"
-        "<td>%s</td><td>%s</td><td>%s</td></tr>" % (
+        "<td>%s</td><td>%s <span class='mut' style='font-size:11px'>"
+        "%s</span></td><td>%s</td></tr>" % (
             esc(e.get("sev", "info")), esc(e.get("sev", "info")),
             time.strftime("%m/%d/%Y", time.localtime(e["ts"])),
             time.strftime("%H:%M:%S", time.localtime(e["ts"])),
-            esc(e["text"]))
+            rel(e["ts"]), esc(e["text"]))
         for e in reversed(evs)) or \
         '<tr><td colspan="4" class="note">No events.</td></tr>'
     clearform = ""
@@ -66,7 +86,11 @@ def pg_events(d, msg=""):
 <label class="f" style="padding:0"><input type="checkbox" class="evf" value="warn" checked> warning</label>
 <label class="f" style="padding:0"><input type="checkbox" class="evf" value="info" checked> info</label>
 <input type="text" id="evq" placeholder="Filter events&hellip;"
- style="width:220px" title="Filter the table by event text — client-side, instant"></div>
+ style="width:220px" title="Filter the table by event text — client-side, instant">
+%s
+<label class="f" style="padding:0;margin-left:auto"
+ title="Reload the page every 60 seconds"><input type="checkbox"
+ id="evrefresh"> auto-refresh</label></div>
 <table class="ev" id="evtable" data-pg-global="#evq" data-pg-sev>
 <tr><th style="width:20px"></th>
 <th style="width:105px">Date</th><th style="width:85px">Time</th>
@@ -75,7 +99,7 @@ def pg_events(d, msg=""):
 <a class="btn sec" href="/events.txt">Download events.txt</a>
 <a class="btn sec" href="/data.txt" title="Download the power data log">Download data.txt</a>
 %s</div>
-</div></div>""" % (m, rows, clearform)
+</div></div>""" % (m, counts, rows, clearform)
 
 
 def pg_data():
@@ -187,6 +211,18 @@ def support_bundle():
                 "%s: %s" % kv for kv in sorted(ups_vars().items())))
         except Exception as e:
             put(tf, "ups-vars.txt", "<%s>" % e)
+        try:
+            put(tf, "ups-cmds.txt", "\n".join(
+                "%s: %s" % kv for kv in sorted(ups_cmds().items())))
+        except Exception as e:
+            put(tf, "ups-cmds.txt", "<%s>" % e)
+        try:
+            put(tf, "ups-rw.txt", "\n".join(
+                "%s: %s" % kv for kv in sorted(ups_rw().items())))
+        except Exception as e:
+            put(tf, "ups-rw.txt", "<%s>" % e)
+        put(tf, "nmcli.txt", sh(["nmcli", "-t", "dev", "status"]) +
+            sh(["nmcli", "dev", "show"]))
         put(tf, "services.txt", sh(
             ["systemctl", "--no-pager", "--full", "status",
              "apc-nmc-web.service", "nut-server.service",
@@ -274,9 +310,15 @@ def pg_about(d, msg: "str | tuple" = ""):
         avail = "no"
     else:
         avail = "?"
+    repo = cfg("update", "repo", "ArMaTeC/apcupspi")
+    relurl = "https://github.com/%s/releases" % repo
     upd = "".join(kv(a, b) for a, b in [
         ("Installed Version", esc(installed_version())),
-        ("Latest Version", esc(us.get("latest") or "?")),
+        ("Latest Version", esc(us.get("latest") or "?")
+         + ' &nbsp;<a class="btn sec" style="padding:1px 8px;'
+           'font-size:11px" href="%s" target="_blank" rel="noopener" '
+           'title="Release notes and history on GitHub">Releases</a>'
+           % esc(relurl)),
         ("Last Check", checked),
         ("Update Available", avail)])
     if us.get("available") and us.get("notes"):
@@ -341,7 +383,17 @@ def pg_about(d, msg: "str | tuple" = ""):
 <form method="post" action="/about/update/apply" style="display:inline"
  onsubmit="return confirm('Download and install the latest version now? Services (including this interface) restart during the update.')">
 %s<button class="btn sec updbtn" type="submit"%s>Update Now</button></form>
-%s""" % (csrf_input(d), dis, csrf_input(d), dis, rollbtn))
+%s
+<form method="post" action="/about/sysact" style="display:inline"
+ onsubmit="return confirm('Restart the web interface? You will be logged out for a few seconds.')">
+%s<input type="hidden" name="act" value="restart-web">
+<button class="btn sec" type="submit">Restart Interface</button></form>
+<form method="post" action="/about/sysact" style="display:inline"
+ onsubmit="return confirm('Reboot this management card? All services (including this interface) stop until it comes back.')">
+%s<input type="hidden" name="act" value="reboot">
+<button class="btn dan" type="submit">Reboot Card</button></form>
+""" % (csrf_input(d), dis, csrf_input(d), dis, rollbtn,
+       csrf_input(d), csrf_input(d)))
         utok = cfg("web", "api_token", "")
         tokdisp = ('<code style="word-break:break-all">%s</code>'
                    '<button class="btn sec" type="button" '
@@ -674,8 +726,15 @@ def pg_500():
 <p><a class="btn sec" href="/home">Return to Home</a></p></div></div>"""
 
 
+def _txt_banner(what):
+    return ("# %s — APC Network Management PI v%s\n"
+            "# generated %s\n\n" % (
+                what, installed_version(),
+                time.strftime("%Y-%m-%d %H:%M:%S")))
+
+
 def events_txt():
-    lines = []
+    lines = [_txt_banner("Event Log")]
     for e in load_events():
         lines.append("%s  %s  %s" % (
             time.strftime("%m/%d/%Y", time.localtime(e["ts"])),
@@ -724,7 +783,8 @@ def data_txt(hours=None, csv=False):
     keys = ("battery.charge", "ups.load", "ups.realpower", "input.voltage",
             "output.voltage", "battery.temperature", "st")
     sep = "," if csv else "\t"
-    lines = [sep.join(["ts", "date", "time"] + list(keys))]
+    lines = ([] if csv else [_txt_banner("Data Log")])
+    lines.append(sep.join(["ts", "date", "time"] + list(keys)))
     cutoff = int(time.time() - hours * 3600) if hours else 0
     for r in load_data():
         if r.get("ts", 0) < cutoff:
