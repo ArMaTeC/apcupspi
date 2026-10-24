@@ -75,6 +75,12 @@
         ctx.globalCompositeOperation = 'destination-out';
         ctx.beginPath(); ctx.arc(cx, cy, r2, 0, Math.PI * 2); ctx.fill();
         ctx.globalCompositeOperation = 'source-over';
+        if (center) {                 // big value centred in the hole
+            ctx.fillStyle = '#555';
+            ctx.font = '700 ' + (34 * DPR) + 'px sans-serif';
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillText(center, cx, cy + 2 * DPR);
+        }
     }
 
     function label(id) {
@@ -91,18 +97,14 @@
         var chg = seed.chg || 0, ld = seed.ld || 0;
         var sev = seed.sev || {crit: 0, warn: 0, info: 0};
         donut('dn_chg', [chg, Math.max(0, 100 - chg)],
-              ['#3dcd58', 'rgba(120,120,120,.25)']);
+              ['#3dcd58', 'rgba(120,120,120,.25)'],
+              chg.toFixed(0) + '%');
         donut('dn_load', [ld, Math.max(0, 100 - ld)],
-              ['#ffb84d', 'rgba(120,120,120,.25)']);
+              ['#ffb84d', 'rgba(120,120,120,.25)'],
+              ld.toFixed(0) + '%');
         donut('dn_sev', [sev.crit || 0, sev.warn || 0, sev.info || 0],
-              ['#e05252', '#ffb84d', '#3dcd58']);
-        var e;
-        if ((e = document.getElementById('dn_chg_v')))
-            e.textContent = chg.toFixed(0) + '%';
-        if ((e = document.getElementById('dn_load_v')))
-            e.textContent = ld.toFixed(0) + '%';
-        if ((e = document.getElementById('dn_sev_v')))
-            e.textContent = (sev.crit + sev.warn + sev.info) || 0;
+              ['#e05252', '#ffb84d', '#3dcd58'],
+              String((sev.crit || 0) + (sev.warn || 0) + (sev.info || 0)));
     }
 
     function anchor(win) {

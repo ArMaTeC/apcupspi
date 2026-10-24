@@ -203,7 +203,11 @@ def pg_stats(d):
                % (int(st.get("ob_max", 0)) // 3600,
                   int(st.get("ob_max", 0)) % 3600 // 60))
     rows += kv("Last Transfer", esc(st.get("last_transfer", "None")))
-    rows += kv("Last Self-Test", esc(str(st.get("diag_result", "?")))
+    try:
+        _dr = test_result_str(int(st.get("diag_result", 0)))
+    except (ValueError, TypeError):
+        _dr = "never run"
+    rows += kv("Last Self-Test", esc(_dr)
                + " &middot; " + esc(st.get("diag_date", "?")))
     bh = battery_health(d)
     if bh:
@@ -237,16 +241,19 @@ def pg_stats(d):
     dcard = ('<div class="card"><h3>Distribution</h3><div class="pad">'
              '<div class="donuts">'
              '<div class="donut"><canvas id="dn_chg" width="300" '
-             'height="300"></canvas><div class="dbig" id="dn_chg_v">'
-             '%.0f%%</div><div class="dlbl">Battery charge</div></div>'
+             'height="300"></canvas><div class="dlbl">Battery charge'
+             '</div></div>'
              '<div class="donut"><canvas id="dn_load" width="300" '
-             'height="300"></canvas><div class="dbig" id="dn_load_v">'
-             '%.0f%%</div><div class="dlbl">UPS load</div></div>'
+             'height="300"></canvas><div class="dlbl">UPS load</div>'
+             '</div>'
              '<div class="donut"><canvas id="dn_sev" width="300" '
-             'height="300"></canvas><div class="dbig" id="dn_sev_v">'
-             '%d</div><div class="dlbl">Events (crit/warn/info)</div>'
-             '</div></div></div></div>'
-             % (chg or 0, ld or 0, len(evs)))
+             'height="300"></canvas><div class="dlbl">Events</div>'
+             '<div class="dleg">'
+             '<span><i style="background:#e05252"></i>%d crit</span>'
+             '<span><i style="background:#ffb84d"></i>%d warn</span>'
+             '<span><i style="background:#3dcd58"></i>%d info</span>'
+             '</div></div></div></div></div>'
+             % (sev["crit"], sev["warn"], sev["info"]))
 
     charts = ""
     for cid, lbl in (("c_charge", "Battery Charge %"),
@@ -262,7 +269,7 @@ def pg_stats(d):
                    'loading&hellip;</div></div></div>'
                    % (lbl, cid, cid))
     return """<h1 class="page">Statistics</h1>
-%s%s
+<div class="stgrid">%s%s</div>
 <div class="card"><div class="pad" style="display:flex;gap:8px;
 align-items:center;flex-wrap:wrap">
 <span class="mut">Window:</span>

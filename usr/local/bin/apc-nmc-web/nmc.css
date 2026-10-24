@@ -1276,4 +1276,5 @@ select,
 .donut{width:150px;text-align:center}
 .donut canvas{width:150px;height:150px}
 .donut .dlbl{font-size:12px;color:var(--mut);margin-top:6px}
-.donut .dbig{font-size:20px;font-weight:600;margin-top:-86px;position:relative;pointer-events:none}
+.dleg{display:flex;gap:10px;justify-content:center;margin-top:4px;font-size:11.5px;color:var(--mut)}
+.dleg i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:3px;vertical-align:-1px}
