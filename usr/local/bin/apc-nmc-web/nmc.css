@@ -1285,7 +1285,7 @@ select,
 @media(max-width:900px){.helptoc{position:static;max-height:none}}
 
 /* ---- Statistics page ---- */
-.stgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(430px,1fr));gap:22px}
+.stgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(430px,100%),1fr));gap:22px}
 .stgrid canvas{image-rendering:auto}
 .donuts{display:flex;gap:24px;flex-wrap:wrap;justify-content:center;padding:4px 0}
 .donut{width:150px;text-align:center}

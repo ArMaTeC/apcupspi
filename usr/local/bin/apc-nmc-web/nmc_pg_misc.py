@@ -760,7 +760,8 @@ def pg_network():
 
 def pg_nut(d):
     """Read-only dump of every live NUT variable (admin/diagnostic)."""
-    main = sorted(k for k in d if not k.startswith("driver."))
+    main = sorted(k for k in d
+                  if not k.startswith(("driver.", "__")))
     drv = sorted(k for k in d if k.startswith("driver."))
     rows = "".join("<tr><td class='lbl' style='font-family:monospace'>%s</td>"
                    "<td style='font-family:monospace'>%s</td></tr>"
