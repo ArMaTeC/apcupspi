@@ -435,14 +435,17 @@ fi
 echo ">> Enabling services..."
 systemctl daemon-reload && echo "   systemd reloaded"
 systemctl unmask ssh.service 2>/dev/null || true
-for s in nut-server nut-monitor nut-driver-enumerator.path \
-         nut-driver-enumerator.service \
-         snmpd apc-nmc-web net-watchdog.timer apc-nmc-update-check.timer \
+for s in nut-server nut-monitor snmpd apc-nmc-web \
+         net-watchdog.timer apc-nmc-update-check.timer \
          ssh serial-getty@ttyS0; do
     echo "   enabling: $s"
     systemctl enable "$s" 2>&1 || echo "   !! could not enable $s"
 done
-systemctl mask userconfig.service 2>/dev/null || true
+# nut-driver-enumerator restarts nut-driver@* on every udev/path trigger
+# (~40min cycles) even when ups.conf is unchanged — this appliance has a
+# static UPS config, so mask it instead of enabling it
+systemctl mask nut-driver-enumerator.service \
+    nut-driver-enumerator.path userconfig.service 2>/dev/null || true
 echo ">> Services enabled."
 
 echo

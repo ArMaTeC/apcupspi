@@ -2698,7 +2698,8 @@ class H(BaseHTTPRequestHandler):
                     "Set-Cookie": "nmc_session=%s; Path=/; HttpOnly; Secure; "
                                   "SameSite=Lax" % tok})
             self._record_fail()
-            log_event("NMC: Failed log on attempt from %s." % self._peer())
+            log_event("NMC: Failed log on attempt from %s (user '%s')."
+                    % (self._peer(), user or "?"))
             return self._send(200, login_page(
                 "Invalid User Name or Password.", nxt))
         sess = self._sess()
