@@ -1252,6 +1252,7 @@ select,
   .content.wide {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(560px, 1fr));
+    column-gap: 22px;
     align-items: start;
   }
   .content.wide > *:not(.card) {

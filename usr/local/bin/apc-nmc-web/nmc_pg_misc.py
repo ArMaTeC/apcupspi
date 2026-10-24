@@ -434,7 +434,7 @@ def pg_about(d, msg: "str | tuple" = ""):
  onsubmit="return confirm('%s')">%s
 <input type="hidden" name="act" value="generate">
 <button class="btn sec" type="submit">%s</button></form>
-%s
+%s</div>
 <h3 style="margin:20px 0 8px;font-size:14px">Support Bundle</h3>
 <p style="margin:0 0 10px;color:var(--mut)">Diagnostic snapshot —
 sanitized config, events, service states and recent journals packed
