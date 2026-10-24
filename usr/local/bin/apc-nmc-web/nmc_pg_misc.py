@@ -269,8 +269,8 @@ def pg_stats(d):
                    'loading&hellip;</div></div></div>'
                    % (lbl, cid, cid))
     return """<h1 class="page">Statistics</h1>
-<div class="stgrid">%s%s</div>
-<div class="card"><div class="pad" style="display:flex;gap:8px;
+<div class="stgrid">%s%s%s</div>
+<div class="card" style="grid-column:1/-1"><div class="pad" style="display:flex;gap:8px;
 align-items:center;flex-wrap:wrap">
 <span class="mut">Window:</span>
 <button class="btn sec strng act" data-h="24">24 h</button>
@@ -281,7 +281,7 @@ align-items:center;flex-wrap:wrap">
 <div class="stgrid">%s</div>
 <script>window.ST_SEED=%s;</script>
 <script>%s</script>""" % (
-        opcard, ecard + dcard, charts,
+        opcard, ecard, dcard, charts,
         json.dumps({"chg": chg or 0, "ld": ld or 0, "sev": sev}),
         _asset("stats.js"))
 
