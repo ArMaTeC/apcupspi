@@ -486,6 +486,7 @@ table.kv td.lbl {
    nmcTable() in nmc.js adds filter inputs + pagination to these. */
 table.ev {
   width: 100%;
+  table-layout: fixed;   /* honour header widths; never grow past the card */
   border-collapse: collapse
 }
 table.ev th,
@@ -493,7 +494,8 @@ table.ev td {
   text-align: left;
   padding: 8px 12px;
   font-size: 13px;
-  border-bottom: 1px solid var(--line)
+  border-bottom: 1px solid var(--line);
+  overflow-wrap: break-word    /* long URLs/serials wrap, never clip */
 }
 table.ev th {
   color: var(--mut);
