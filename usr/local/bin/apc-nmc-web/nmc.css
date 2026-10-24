@@ -1248,10 +1248,10 @@ select,
 /* Wide layout: cards flow into a 2-column grid on large screens. Only
  * used where page() opts in — non-card children (titles, msgboxes,
  * scripts, full-width tables) span all columns. */
-@media (min-width: 1200px) {
+@media (min-width: 1100px) {
   .content.wide {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(620px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(560px, 1fr));
     align-items: start;
   }
   .content.wide > *:not(.card) {

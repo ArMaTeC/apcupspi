@@ -719,7 +719,7 @@ fetch('/config/wifi/scan?if='+encodeURIComponent(
             (" &mdash; connected to <b>%s</b>" % esc(wconn)) if wconn else "",
             csrf,
             "off" if wradio == "enabled" else "on",
-            "Deactivate WiFi" if wradio == "enabled"
+            "Disable WiFi" if wradio == "enabled"
             else "Activate WiFi Setup",
             ('<form method="post" action="/config/wifi">%s'
              '<input type="hidden" name="act" value="disconnect">'

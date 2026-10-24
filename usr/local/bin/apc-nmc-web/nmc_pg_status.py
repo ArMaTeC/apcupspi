@@ -59,7 +59,7 @@ def pg_home(d):
     rt_cls = "warn" if rt_sec and rt_sec < 1800 else ""
     tiles = (
         tile("Battery Charge", "%g %%" % charge if live else "?",
-             "capacity" if live else "no data",
+             "of capacity" if live else "no data",
              bar=charge if live else None, cls=charge_cls,
              vid="battery.charge",
              tip="Remaining battery capacity")
@@ -205,10 +205,14 @@ def _status_frags(d):
                   % esc(d["battery.voltage.nominal"]))
     top += kv("Battery Replacement", "Not indicated"
               if "RB" not in toks(d) else "Battery needs replacement")
+    def _us(iso):
+        p = iso.split("-")
+        return ("%s/%s/%s" % (p[1], p[2], p[0])) if len(p) == 3 else iso
     if "battery.date" in d:
-        top += kv("Battery Install Date", esc(d["battery.date"]))
+        top += kv("Battery Install Date", esc(_us(d["battery.date"])))
     if "battery.date.maintenance" in d:
-        top += kv("Next Battery Maintenance", esc(d["battery.date.maintenance"]))
+        top += kv("Next Battery Maintenance",
+                  esc(_us(d["battery.date.maintenance"])))
     age = battery_age_years()
     if age is not None:
         top += kv("Battery Age",
@@ -357,7 +361,7 @@ def pg_control(d, msg: "str | tuple" = "", cmds=None):
         opts.append(("beep_off", "Turn Audible Alarm Off", 0))
     radios = "".join(
         '<label class="f"><input type="radio" name="act" value="%s"%s> '
-        '%s</label>' % (v, " checked" if first else "", esc(t))
+        '%s</label>' % (v, "", esc(t))
         for v, t, first in opts)
     sdel = num(d, "ups.delay.shutdown", 0) or 0
     delnote = ('<p class="note" style="margin-top:6px">Configured shutdown '

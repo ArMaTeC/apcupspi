@@ -341,7 +341,7 @@ function nmcPwScore(p) {
     if (!f) return;
     var bar = document.createElement('div');
     bar.style.cssText = 'height:5px;border-radius:3px;margin-top:6px;' +
-        'background:var(--brd,#444);width:160px';
+        'background:var(--brd,#444);width:160px;display:none';
     var fill = document.createElement('div');
     fill.style.cssText = 'height:100%;border-radius:3px;width:0;' +
         'transition:width .2s,background .2s';
@@ -357,6 +357,7 @@ function nmcPwScore(p) {
                     '#3dcd58', '#3dcd58'],
             lbls = ['very weak', 'weak', 'fair', 'fair', 'good',
                     'strong'];
+        bar.style.display = f.value ? '' : 'none';
         fill.style.width = (f.value ? 20 + s * 16 : 0) + '%';
         fill.style.background = cols[s];
         lab.textContent = f.value ? lbls[s] : '';
