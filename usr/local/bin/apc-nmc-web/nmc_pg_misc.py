@@ -175,7 +175,8 @@ def stats_series(win_h):
         arr = [r for r in arr if r.get("ts", 0) > now - win_h * 3600]
     out = {}
     for key in ("battery.charge", "ups.load", "ups.realpower",
-                "input.voltage", "output.voltage", "battery.temperature"):
+                "ups.power", "input.voltage", "output.voltage",
+                "input.frequency", "battery.temperature"):
         vs = [(r["ts"], num(r, key)) for r in arr
               if num(r, key) is not None]
         if not vs:
@@ -261,6 +262,8 @@ def pg_stats(d):
                      ("c_watts", "Real Power W"),
                      ("c_inv", "Input VAC"),
                      ("c_outv", "Output VAC"),
+                     ("c_va", "Apparent VA"),
+                     ("c_freq", "Input Hz"),
                      ("c_temp", "Battery Temp &deg;C")):
         charts += ('<div class="card"><h3>%s</h3><div class="pad">'
                    '<canvas id="%s" width="620" height="200" '
