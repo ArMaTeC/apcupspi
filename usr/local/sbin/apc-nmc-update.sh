@@ -346,7 +346,8 @@ PYEOF
     BUILT_OK=0
     INPUTS=$(sha256sum "${SRC}"vendor/nut-2.8.5-src.tar.gz \
         "${SRC}"vendor/libmodbus-*.tar.gz \
-        "${SRC}"vendor/patches/* 2>/dev/null | sha256sum | cut -d' ' -f1)
+        "${SRC}"vendor/patches/* 2>/dev/null | cut -d' ' -f1 \
+        | sha256sum | cut -d' ' -f1)
     if [ -s /usr/lib/nut/apc_modbus ] \
             && [ "$(cat "$BUILD_STAMP" 2>/dev/null)" = "$INPUTS" ] \
             && [ -n "$INPUTS" ]; then
