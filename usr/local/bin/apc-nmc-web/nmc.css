@@ -494,8 +494,18 @@ table.ev td {
   text-align: left;
   padding: 8px 12px;
   font-size: 13px;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--line)
+}
+table.ev td {
   overflow-wrap: break-word    /* long URLs/serials wrap, never clip */
+}
+table.pgtbl {
+  table-layout: fixed;         /* nmcTable-filtered kv grids share the
+                                  fixed layout so they never clip     */
+  width: 100%
+}
+table.pgtbl td {
+  overflow-wrap: break-word
 }
 table.ev th {
   color: var(--mut);

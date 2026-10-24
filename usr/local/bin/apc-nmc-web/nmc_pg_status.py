@@ -515,7 +515,7 @@ def pg_outlets(d, msg: "str | tuple" = ""):
         cfgcard = ("""<div class="card"><h3>Outlet Group Configuration</h3>
 <div class="pad">
 <form method="post" action="/config/outlets">%s
-<table class="ev"><tr><th class="lbl" style="width:180px">Group</th><th>Name</th>
+<table class="ev"><tr><th class="lbl" style="width:70px">Group</th><th>Name</th>
 <th>Shutdown delay s<span class="tip" title="Wait before cutting this group's power on shutdown">?</span></th><th>Reboot delay s<span class="tip" title="Off-time when this group is cycled">?</span></th><th>Power-on delay s<span class="tip" title="Wait before restoring power — staggers inrush across groups">?</span></th></tr>
 %s</table>
 <div style="margin-top:14px"><button class="btn">Apply</button></div>
