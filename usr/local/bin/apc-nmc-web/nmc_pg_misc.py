@@ -15,9 +15,9 @@ def pg_help(d, slug):
     if slug not in slugs:
         slug = "index"
     toc = "".join(
-        '<a href="/help/%s"%s>%s<span>%s</span></a>'
+        '<a href="/help/%s"%s data-h="%s">%s</a>'
         % (s, ' class="here" aria-current="page"' if s == slug else "",
-           esc(t), esc(b))
+           esc((t + " " + b).lower()), esc(t))
         for s, t, b in HELP_TOPICS)
     body = _asset("help/%s.html" % slug)
     if not body:
@@ -31,7 +31,8 @@ def pg_help(d, slug):
 <div class="card help">
  <div class="card-head"><h3>Documentation</h3></div>
  <div class="helpwrap">
-  <div class="helptoc">%s</div>
+  <div class="helptoc"><input class="helpfind" placeholder="Filter topics&hellip;"
+   aria-label="Filter help topics"><nav>%s</nav></div>
   <div class="helpbody"><h2>%s</h2>%s%s</div>
  </div>
 </div>

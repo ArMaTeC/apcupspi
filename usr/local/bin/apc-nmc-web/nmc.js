@@ -453,3 +453,17 @@ function nmcLivePush(id, vals) {
         }).join('   ');
     }
 }
+
+/* Help TOC quick-filter: substring match on title+blurb (data-h). */
+(function () {
+    var f = document.querySelector('.helpfind');
+    if (!f) return;
+    f.addEventListener('input', function () {
+        var q = f.value.toLowerCase();
+        document.querySelectorAll('.helptoc nav a').forEach(function (a) {
+            a.style.display =
+                (!q || (a.getAttribute('data-h') || '').indexOf(q) >= 0)
+                    ? '' : 'none';
+        });
+    });
+})();

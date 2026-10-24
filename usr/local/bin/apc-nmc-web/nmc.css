@@ -1223,26 +1223,6 @@ select,
 }
 
 /* ------- Help / documentation module ------- */
-.helpwrap{display:flex;gap:0;min-height:300px}
-.helptoc{flex:0 0 210px;border-inline-end:1px solid var(--line);padding:10px 0}
-.helptoc a{display:block;padding:7px 18px;color:var(--mut);font-size:13px;border-inline-start:3px solid transparent}
-.helptoc a span{display:block;font-size:11px;opacity:.75}
-.helptoc a:hover{background:var(--surface2);color:var(--apc-dk,#1d8630)}
-.helptoc a.here{border-inline-start-color:var(--apc,#3dcd58);color:var(--apc-dk,#1d8630);font-weight:600;background:var(--surface2)}
-.helpbody{flex:1;min-width:0;padding:14px 22px;font-size:13.5px;line-height:1.9}
-.helpbody h2{margin:0 0 10px;font-size:19px}
-.helpbody h4{margin:18px 0 6px;font-size:14.5px}
-.helpbody p{margin:6px 0}
-.helpbody ul,.helpbody ol{margin:6px 0;padding-inline-start:22px}
-.helpbody li{margin:3px 0}
-.helpbody table{width:100%;border-collapse:collapse;margin:8px 0;font-size:12.5px}
-.helpbody th,.helpbody td{border:1px solid var(--line);padding:5px 9px;text-align:start}
-.helpbody th{background:var(--surface2)}
-.helpbody code{background:var(--surface2);border:1px solid var(--line);border-radius:4px;padding:0 5px;font-size:12px}
-.helpbody .h-kbd{background:var(--surface2);border:1px solid var(--line);border-radius:4px;padding:0 6px;font-size:12px}
-.helplink{margin-top:18px;padding-top:10px;border-top:1px dashed var(--line);font-size:12.5px}
-@media(max-width:900px){.helpwrap{flex-direction:column}.helptoc{flex:none;border-inline-end:0;border-bottom:1px solid var(--line)}}
-
 /* Inline "?" tooltip badge next to labels */
 .tip{display:inline-block;width:14px;height:14px;line-height:14px;font-size:10px;font-weight:700;text-align:center;border-radius:50%;background:var(--mut);color:var(--surface);cursor:help;vertical-align:2px;margin-inline-start:4px;opacity:.75}
 .tip:hover,.tip:focus{opacity:1}
@@ -1262,3 +1242,29 @@ select,
     grid-column: 1 / -1;
   }
 }
+
+/* ---- Help redesign: sticky filterable TOC + readable body column ---- */
+.helpwrap{display:flex;gap:0;min-height:300px}
+.helptoc{flex:0 0 232px;border-inline-end:1px solid var(--line);
+  padding:12px 0;align-self:flex-start;position:sticky;top:10px;
+  max-height:calc(100vh - 40px);overflow-y:auto}
+.helpfind{width:calc(100% - 28px);margin:0 14px 10px;padding:6px 10px;
+  font-size:12.5px;border:1px solid var(--fieldbd);border-radius:7px;
+  background:var(--field);color:var(--fieldfg);box-sizing:border-box}
+.helptoc nav a{display:block;padding:7px 18px 7px 16px;color:var(--mut);
+  font-size:13.5px;border-inline-start:3px solid transparent;
+  line-height:1.3}
+.helptoc nav a:hover{background:var(--surface2);color:var(--fg)}
+.helptoc nav a.here{border-inline-start-color:var(--apc,#3dcd58);
+  color:var(--fg);font-weight:600;background:var(--surface2)}
+.helpbody{flex:1;min-width:0;max-width:78ch;padding:20px 30px 26px;
+  font-size:14.5px;line-height:1.75}
+.helpbody h2{margin:0 0 14px;font-size:21px}
+.helpbody h3{margin:20px 0 8px;font-size:16px}
+.helpbody h4{margin:22px 0 8px;font-size:14.5px;
+  padding-bottom:4px;border-bottom:1px solid var(--line)}
+.helpbody p{margin:8px 0}
+.helpbody a{color:var(--apc-dk,#1d8630)}
+.helpbody th,.helpbody td{padding:7px 11px}
+.helpbody>table{margin:12px 0}
+@media(max-width:900px){.helptoc{position:static;max-height:none}}
