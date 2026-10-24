@@ -638,9 +638,15 @@ def pg_tests(d, msg: "str | tuple" = ""):
 <tr><td class="lbl">When<span class="tip" title="Day and hour of the scheduled UPS power-off — once per week">?</span></td><td>%s at %s</td></tr>
 <tr><td class="lbl">After Power-Off<span class="tip" title="Return when power is restored vs. stay off until manually restarted">?</span></td><td><select name="sd_mode">%s</select></td></tr>
 <tr><td class="lbl">Next Run<span class="tip" title="When the scheduled power-off will next fire">?</span></td><td>%s</td></tr>
+</table><h4 style="margin:18px 0 8px">Scheduled UPS Reboot</h4>
+<table class="kv">
+<tr><td class="lbl">When<span class="tip" title="Day and hour of the scheduled UPS reboot — once per week; the UPS restores load after its reboot delay">?</span></td><td>%s at %s</td></tr>
+<tr><td class="lbl">Next Run<span class="tip" title="When the scheduled reboot will next fire">?</span></td><td>%s</td></tr>
 </table><p class="note" style="margin-top:8px">Fires once per matching
 day. "Return when power is restored" sends shutdown.return; "stay off"
-sends shutdown.stayoff &mdash; the UPS then needs a manual restart.</p>
+sends shutdown.stayoff &mdash; the UPS then needs a manual restart.
+A scheduled reboot sends shutdown.reboot; the UPS returns power
+after its reboot delay.</p>
 <div style="margin-top:12px">%s
 <button class="btn">Save Schedules</button></div></form></div></div>""" % (
             wdsel("st_wd", cfg("schedule", "selftest_weekday", "")),
@@ -651,15 +657,21 @@ sends shutdown.stayoff &mdash; the UPS then needs a manual restart.</p>
                  cfg("schedule", "selftest_hour", ""))) else "&mdash;"),
             wdsel("sd_wd", cfg("schedule", "shutdown_weekday", "")),
             hrsel("sd_hr", cfg("schedule", "shutdown_hour", "")),
-            (time.strftime("%a %d %b %H:%M", time.localtime(nx))
-             if (nx := sched_next(
-                 cfg("schedule", "shutdown_weekday", ""),
-                 cfg("schedule", "shutdown_hour", ""))) else "&mdash;"),
             "".join('<option value="%s"%s>%s</option>' % (
                 v, " selected" if v == smode else "", lbl)
                 for v, lbl in (("return",
                                 "return when power is restored"),
                                ("stayoff", "stay off"))),
+            (time.strftime("%a %d %b %H:%M", time.localtime(nx))
+             if (nx := sched_next(
+                 cfg("schedule", "shutdown_weekday", ""),
+                 cfg("schedule", "shutdown_hour", ""))) else "&mdash;"),
+            wdsel("rb_wd", cfg("schedule", "reboot_weekday", "")),
+            hrsel("rb_hr", cfg("schedule", "reboot_hour", "")),
+            (time.strftime("%a %d %b %H:%M", time.localtime(nrb))
+             if (nrb := sched_next(
+                 cfg("schedule", "reboot_weekday", ""),
+                 cfg("schedule", "reboot_hour", ""))) else "&mdash;"),
             csrf_input(d))
     return """<h1 class="page">Diagnostics</h1>
 <div id="pagebody">%s

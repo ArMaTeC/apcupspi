@@ -1581,6 +1581,27 @@ def _maybe_scheduled_shutdown(ok):
         ups_cmd(cmd)
 
 
+def _maybe_scheduled_reboot(ok):
+    """Calendar UPS reboot ([schedule] reboot_weekday/hour) — fires
+    shutdown.reboot at most once per matching day. Unlike power-off,
+    the UPS always restores load after its configured reboot delay."""
+    wd, hr = (cfg("schedule", "reboot_weekday", "").strip(),
+              cfg("schedule", "reboot_hour", "").strip())
+    if not wd or not hr or not ok:
+        return
+    try:
+        wd_i, hr_i = int(wd), int(hr)
+    except ValueError:
+        return
+    t = time.localtime()
+    today = time.strftime("%Y-%m-%d")
+    if t.tm_wday == wd_i and t.tm_hour == hr_i and \
+            cfg_get("reboot_sched_last", "") != today:
+        cfg_set("reboot_sched_last", today)
+        log_event("UPS: Scheduled reboot started.", "warn")
+        ups_cmd("shutdown.reboot")
+
+
 def _auto_unmute_beeper(d, ok):
     """Re-arm the beeper after a card-tracked mute once the UPS leaves
     the alarm state, so the next alarm is audible again."""
@@ -1627,6 +1648,7 @@ def status_poller():
         comm_ok = ok
         _maybe_scheduled_selftest(ok)
         _maybe_scheduled_shutdown(ok)
+        _maybe_scheduled_reboot(ok)
         if ok and not batt_age_checked:
             batt_age_checked = True
             age = battery_age_years()

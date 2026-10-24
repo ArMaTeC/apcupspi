@@ -194,13 +194,15 @@ def do_schedule(form):
     """Save weekly self-test + UPS power-off schedules
     ([schedule] in nmc.conf; empty weekday/hour = disabled)."""
     for fkey, ckey in (("st_wd", "selftest_weekday"),
-                       ("sd_wd", "shutdown_weekday")):
+                       ("sd_wd", "shutdown_weekday"),
+                       ("rb_wd", "reboot_weekday")):
         v = form.get(fkey, [""])[0].strip()
         if v and not re.fullmatch(r"[0-6]", v):
             return ("msg-err", "weekday: invalid")
         conf_set("schedule", ckey, v)
     for fkey, ckey in (("st_hr", "selftest_hour"),
-                       ("sd_hr", "shutdown_hour")):
+                       ("sd_hr", "shutdown_hour"),
+                       ("rb_hr", "reboot_hour")):
         v = form.get(fkey, [""])[0].strip()
         if v and not re.fullmatch(r"([01]?\d|2[0-3])", v):
             return ("msg-err", "hour: invalid")
