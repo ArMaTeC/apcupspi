@@ -218,6 +218,10 @@ def do_notify_config(form):
         cfg_set("notify_smtp_from", v("nsmtpfrom")[:64])
     if "nsmtpto" in form:
         cfg_set("notify_smtp_to", v("nsmtpto")[:128])
+    if "ntrapdest" in form:
+        cfg_set("notify_trap_dest", v("ntrapdest")[:128])
+    if "ntrapcomm" in form:
+        cfg_set("notify_trap_comm", v("ntrapcomm")[:32] or "public")
 
     # Routing matrix: only when rt_* fields are present — a partial POST
     # (API caller, stale page) must not silently clear all routing.
@@ -257,6 +261,9 @@ def do_notify_test(ch):
                                       _NOTIFY_TEST_TEXT, "info")),
         "email": (n["smtp_host"] and n["smtp_to"],
                   lambda: _send_email(n, _NOTIFY_TEST_TEXT, "info")),
+        "trap": (n["trap_dest"],
+                 lambda: _send_trap(n["trap_dest"], n["trap_comm"],
+                                    _NOTIFY_TEST_TEXT, "info")),
     }.get(ch)
     if not send:
         return ("msg-err", "Unknown channel.")

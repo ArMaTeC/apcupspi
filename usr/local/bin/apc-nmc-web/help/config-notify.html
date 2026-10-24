@@ -15,6 +15,7 @@ written to the Event Log. Choices: Info, Warning, Critical.</p>
  <tr><td>Discord</td><td>Webhook URL, mention</td><td>Posts to a Discord channel; the mention (e.g. <code>@here</code>) is sent only with critical alerts</td></tr>
  <tr><td>Teams</td><td>Webhook URL</td><td>Sends an adaptive card to a Teams channel (Office 365 Incoming Webhook connector)</td></tr>
  <tr><td>Email (SMTP)</td><td>Host, port, security, user, password, from, to (comma-separated)</td><td>Works with Gmail, O365 and internal relays; blank port auto-picks 465/587/25</td></tr>
+ <tr><td>SNMP Trap</td><td>Destination host[:port], community</td><td>Sends SNMPv2c enterprise-specific traps under the APC PowerNet OID (.318) — what a real NMC sends to StruxureWare, Zabbix, snmptrapd</td></tr>
 </table>
 
 <h4>Alert Routing Matrix</h4>

@@ -977,13 +977,18 @@ def notify_cfg():
         "smtp_pass": cfg_get("notify_smtp_pass", ""),
         "smtp_from": cfg_get("notify_smtp_from", ""),
         "smtp_to": cfg_get("notify_smtp_to", ""),
+        "trap_dest": cfg_get("notify_trap_dest",
+                             cfg("notify", "trap_dest", "")),
+        "trap_comm": cfg_get("notify_trap_comm",
+                             cfg("notify", "trap_community", "public")),
         "routes": notify_routes(),
     }
 
 
 # Routing kinds: each STATUS_EVENTS flag edge maps to one; "other"
 # catches every non-flag event (logins, config changes, NMC notices).
-NOTIFY_CHANNELS = ("syslog", "webhook", "discord", "teams", "email")
+NOTIFY_CHANNELS = ("syslog", "webhook", "discord", "teams",
+                 "email", "trap")
 
 NOTIFY_KINDS = (
     ("on_battery",    "On battery (power failure)"),
@@ -1146,6 +1151,20 @@ def _send_discord(url, text, sev, kind="other", ups_name=None,
     _post_json(url, payload)
 
 
+def _send_trap(dest, comm, text, sev):
+    """SNMPv2c trap to a manager: enterprise-specific under the APC
+    PowerNet OID (.318) carrying the event text + severity as a string
+    varbind — what an NMC sends to e.g. StruxureWare/Zabbix/snmptrapd."""
+    oid = "1.3.6.1.4.1.318.2.4.2.2"
+    payload = "[%s] %s" % (sev.upper(), text)
+    r = subprocess.run(
+        ["snmptrap", "-v", "2c", "-c", comm, dest, "",
+         "." + oid, "." + oid + ".0", "s", payload],
+        check=False, capture_output=True, text=True, timeout=8)
+    if r.returncode != 0:
+        raise RuntimeError((r.stderr or r.stdout or "snmptrap failed").strip())
+
+
 def _send_teams(url, text, sev):
     """Office365 'Incoming Webhook' connector MessageCard payload."""
     _post_json(url, {
@@ -1211,7 +1230,9 @@ def notify_dispatch(text, sev, n=None, kind="other"):
             ("teams", n["teams"], lambda: _send_teams(
                 n["teams"], text, sev)),
             ("email", n["smtp_host"] and n["smtp_to"],
-             lambda: _send_email(n, text, sev))):
+             lambda: _send_email(n, text, sev)),
+            ("trap", n["trap_dest"], lambda: _send_trap(
+                n["trap_dest"], n["trap_comm"], text, sev))):
         if name not in route or not enabled:
             continue
         try:

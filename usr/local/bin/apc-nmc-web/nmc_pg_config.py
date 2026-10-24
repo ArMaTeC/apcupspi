@@ -169,6 +169,11 @@ the stored value.</p>
 %s
 <tr><td class="lbl">Mail From<span class="tip" title="Sender address shown on alert emails">?</span></td><td><input name="nsmtpfrom" maxlength="64" value="%s" placeholder="ups@example.com"></td></tr>
 <tr><td class="lbl">Mail To<span class="tip" title="Recipients — separate multiple addresses with commas">?</span></td><td><input name="nsmtpto" maxlength="128" value="%s" placeholder="admin@example.com, oncall@example.com"></td></tr>
+<tr><td colspan="2"><b>SNMP Traps</b><br><span class="mut">Send SNMPv2c
+traps to a monitoring host on events — what a real NMC sends to
+StruxureWare, Zabbix, snmptrapd, etc.</span></td></tr>
+<tr><td class="lbl">Destination<span class="tip" title="Manager host — IP or name, optionally host:port (default 162)">?</span></td><td><input name="ntrapdest" maxlength="128" value="%s" placeholder="192.168.1.10 or zabbix.local"></td></tr>
+<tr><td class="lbl">Community<span class="tip" title="v2c community string the manager expects">?</span></td><td><input name="ntrapcomm" maxlength="32" value="%s" placeholder="public"></td></tr>
 <tr><td colspan="2"><b>Alert routing</b><br><span class="mut">Which
 channels fire per trigger type. Unchecked channels are skipped for that
 trigger; a fully unchecked row alerts nowhere.</span></td></tr>
@@ -200,6 +205,7 @@ changes first.</p></div></div>""" % (
         esc(nc["smtp_user"]),
         _secf("SMTP Password", "nsmtppass", "smtp_pass", "password"),
         esc(nc["smtp_from"]), esc(nc["smtp_to"]),
+        esc(nc["trap_dest"]), esc(nc["trap_comm"]),
         rt_head, rt_rows, tbtns)
     # Role-aware cards: hide actions the session's role can't POST so
     # the page shows controls that actually work (device gets the UPS
