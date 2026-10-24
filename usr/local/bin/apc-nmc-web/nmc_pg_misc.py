@@ -232,6 +232,22 @@ def pg_stats(d):
     ecard = ('<div class="card"><h3>Energy & Events</h3><div class="pad">'
              '<table class="kv">%s</table></div></div>' % er)
 
+    chg = num(d, "battery.charge")
+    ld = num(d, "ups.load")
+    dcard = ('<div class="card"><h3>Distribution</h3><div class="pad">'
+             '<div class="donuts">'
+             '<div class="donut"><canvas id="dn_chg" width="300" '
+             'height="300"></canvas><div class="dbig" id="dn_chg_v">'
+             '%.0f%%</div><div class="dlbl">Battery charge</div></div>'
+             '<div class="donut"><canvas id="dn_load" width="300" '
+             'height="300"></canvas><div class="dbig" id="dn_load_v">'
+             '%.0f%%</div><div class="dlbl">UPS load</div></div>'
+             '<div class="donut"><canvas id="dn_sev" width="300" '
+             'height="300"></canvas><div class="dbig" id="dn_sev_v">'
+             '%d</div><div class="dlbl">Events (crit/warn/info)</div>'
+             '</div></div></div></div>'
+             % (chg or 0, ld or 0, len(evs)))
+
     charts = ""
     for cid, lbl in (("c_charge", "Battery Charge %"),
                      ("c_load", "Load %"),
@@ -254,10 +270,13 @@ align-items:center;flex-wrap:wrap">
 <button class="btn sec strng" data-h="168">7 days</button>
 <button class="btn sec strng" data-h="0">All</button>
 <span class="note">Trends from the 60&nbsp;s datalog stream —
-<b id="st_total">%d</b> datapoints retained.</span></div></div>
+<b id="st_total">&hellip;</b> datapoints retained.</span></div></div>
 <div class="stgrid">%s</div>
+<script>window.ST_SEED=%s;</script>
 <script>%s</script>""" % (
-        opcard, ecard, len(load_data()), charts, _asset("stats.js"))
+        opcard, ecard + dcard, charts,
+        json.dumps({"chg": chg or 0, "ld": ld or 0, "sev": sev}),
+        _asset("stats.js"))
 
 
 def support_bundle():
