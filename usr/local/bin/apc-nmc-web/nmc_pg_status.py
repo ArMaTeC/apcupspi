@@ -93,6 +93,12 @@ def pg_home(d):
     )
     return """<h1 class="page">Home</h1>
 <div class="tiles">%s</div>
+<div class="card"><h3>Live Trend</h3><div class="pad">
+<canvas id="hchart" width="960" height="200"
+ style="width:100%%;height:auto"></canvas>
+<div class="note" id="hchartlbl" style="margin-top:4px"></div>
+<div class="note">Last 10 minutes, sampled every 5 s.</div>
+</div></div>
 <div class="card"><div class="pad"><table class="kv">
 <tr><td class="lbl"><b>Model</b><br>%s</td>
     <td><b>Location</b><br>%s</td>
@@ -316,7 +322,13 @@ def pg_status(d, msg: "str | tuple" = ""):
 %s</div></div>
 <div class="card"><h3>UPS Input</h3><div class="pad"><table class="kv"><tbody id="stInp">%s</tbody></table></div></div>
 <div class="card"><h3>UPS Output</h3><div class="pad"><table class="kv"><tbody id="stOut">%s</tbody></table></div></div>
-<div id="stTimers">%s</div><div id="stEnv">%s</div>
+<div id="stTimers">%s</div><div class="card"><h3>Live Trend</h3><div class="pad">
+<canvas id="stchart" width="960" height="200"
+ style="width:100%%;height:auto"></canvas>
+<div class="note" id="stchartlbl" style="margin-top:4px"></div>
+<div class="note">Last 10 minutes, sampled every 5 s.</div>
+</div></div>
+<div id="stEnv">%s</div>
 <script>%s</script>""" % (m, esc(d.get("ups.model", "UPS")), fr["stTop"],
                 batbtn, fr["stInp"], fr["stOut"], fr["stTimers"],
                 fr["stEnv"], _asset("status.js"))

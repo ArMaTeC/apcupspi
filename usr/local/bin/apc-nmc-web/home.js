@@ -45,6 +45,13 @@ setInterval(function () {
                 }
             });
 
+            if (document.getElementById('hchart') &&
+                    d['ups.load'] !== undefined) {
+                nmcLivePush('hchart', {
+                    'Load %': d['ups.load'], 'W': d['ups.realpower'],
+                    'Batt %': d['battery.charge'],
+                    'In V': d['input.voltage']});
+            }
             // --- composite fragments by element id ---
             var f = d.frag || {};
             for (var k in f) {

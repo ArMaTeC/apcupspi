@@ -138,7 +138,19 @@ def pg_data():
                       ' &mdash; log window</h3><div class="pad">'
                       '<table class="kv">%s</table></div></div>' % qr)
     return """<h1 class="page">Data Log</h1>
-%s<div class="card"><div class="pad">
+%s<div class="card"><h3>Trend</h3><div class="pad">
+<div id="dlranges" style="margin-bottom:8px">
+<button class="btn sec dlrange act" data-h="24" title="Last 24 hours">24 h</button>
+<button class="btn sec dlrange" data-h="168"
+ style="margin-left:6px" title="Last 7 days">7 days</button>
+<button class="btn sec dlrange" data-h="0"
+ style="margin-left:6px" title="Full retained history">All</button></div>
+<canvas id="dlc" width="1000" height="260"
+ style="width:100%%;height:auto"></canvas>
+<div class="note" id="dllbl" style="margin-top:6px"></div>
+<div class="note">Refreshes every 60 s.</div>
+</div></div>
+<div class="card"><div class="pad">
 <table class="ev"><thead><tr><th>Date</th><th>Time</th><th>Charge %%</th>
 <th>Load %%</th><th>Watts</th><th>In V</th><th>Out V</th><th>Temp &deg;C</th>
 <th>Status</th></tr></thead>

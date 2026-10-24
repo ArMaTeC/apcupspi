@@ -388,3 +388,50 @@ function nmcSwap(el, html) {
     }
     return true;
 }
+
+var _nlc = {};
+/* Live multi-series line chart on a canvas. nmcLivePush(id, {name: v})
+ * appends a sample (max 120 kept) and redraws; each series is normalized
+ * to its own min/max so differing units co-exist; current values render
+ * into #<id>lbl. */
+function nmcLivePush(id, vals) {
+    var st = _nlc[id];
+    if (!st) {
+        st = _nlc[id] = {buf: {}, cv: document.getElementById(id),
+                         lbl: document.getElementById(id + 'lbl')};
+    }
+    if (!st.cv) { delete _nlc[id]; return; }
+    var k, v, a;
+    for (k in vals) {
+        v = parseFloat(vals[k]);
+        if (isNaN(v)) continue;
+        a = st.buf[k] = st.buf[k] || [];
+        a.push(v);
+        if (a.length > 120) a.shift();
+    }
+    var cv = st.cv, ctx = cv.getContext('2d'), W = cv.width, H = cv.height;
+    ctx.clearRect(0, 0, W, H);
+    var keys = Object.keys(st.buf), i, j;
+    var cols = ['#4ea1ff', '#7dd87d', '#ffb84d', '#ff6b6b', '#c084fc',
+                '#4dd0e1'];
+    for (i = 0; i < keys.length; i++) {
+        a = st.buf[keys[i]];
+        var lo = Math.min.apply(null, a), hi = Math.max.apply(null, a);
+        var sp = (hi - lo) || 1;
+        ctx.strokeStyle = cols[i % cols.length];
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        for (j = 0; j < a.length; j++) {
+            var x = 4 + j * ((W - 8) / 119);
+            var y = (H - 6) - ((a[j] - lo) / sp) * (H - 30);
+            if (j) ctx.lineTo(x, y); else ctx.moveTo(x, y);
+        }
+        ctx.stroke();
+    }
+    if (st.lbl) {
+        st.lbl.textContent = keys.map(function (kk) {
+            var b = st.buf[kk];
+            return kk + ': ' + b[b.length - 1];
+        }).join('   ');
+    }
+}

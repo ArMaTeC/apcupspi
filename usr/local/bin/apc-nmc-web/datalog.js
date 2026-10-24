@@ -92,6 +92,10 @@
         };
     });
     draw(24);
+    setInterval(function () {               // live: new samples each minute
+        var act = document.querySelector('.dlrange.act');
+        if (act) draw(parseFloat(act.getAttribute('data-h')) || 0);
+    }, 60000);
 
     // ---- paged table, lazy loaded ------------------------------------
     // Rows come from /datalog.json?off=&lim= (newest first) a page at a
