@@ -284,8 +284,11 @@ def _status_frags(d):
     eff = d.get("ups.efficiency")
     out += kv("Output Efficiency", esc(humanize(eff)) if eff
               else nr(None))
-    out += kv("Output Energy Usage", "%s kWh"
-              % esc(d["experimental.output.energy"])
+    # experimental.output.energy is driver-reported Wh; render as kWh.
+    # The register is flagged experimental by APC, so mark it too.
+    out += kv("Output Energy Usage",
+              "%.1f kWh (est.)" % (float(d["experimental.output.energy"])
+                                   / 1000.0)
               if "experimental.output.energy" in d else nr(None))
 
     timers = ""
