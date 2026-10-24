@@ -1254,6 +1254,7 @@ select,
     grid-template-columns: repeat(auto-fill, minmax(560px, 1fr));
     column-gap: 22px;
     align-items: start;
+    align-content: start;
   }
   .content.wide > *:not(.card) {
     grid-column: 1 / -1;
