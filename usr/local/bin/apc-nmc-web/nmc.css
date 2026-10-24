@@ -409,7 +409,7 @@ main {
 
 /* The centred page column every page body lands in. */
 .content {
-  max-width: 1060px;
+  max-width: 1440px;
   margin: 0 auto;
   padding: 24px 26px 60px;
   flex: 1 0 auto;                     /* pushes .ftr to page bottom     */

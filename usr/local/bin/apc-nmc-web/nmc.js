@@ -196,7 +196,7 @@ function nmcTable(tbl) {
 
 // Enhance every matching table once the DOM is ready.
 document.addEventListener('DOMContentLoaded', function () {
-    document.querySelectorAll('table.ev,table.kv,table.pgtbl')
+    document.querySelectorAll('table.ev,table.pgtbl')
         .forEach(nmcTable);
 });
 
