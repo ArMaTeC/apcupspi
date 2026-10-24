@@ -22,7 +22,7 @@ def _sessions_rows(d, cur_tok, can_drop=True):
         created = s.get("created")
         cstr = (time.strftime("%m/%d %H:%M", time.localtime(created))
                 if created else "&mdash;")
-        exp = time.strftime("%H:%M", time.localtime(s["exp"]))
+        exp = time.strftime("%m/%d %H:%M", time.localtime(s["exp"]))
         ip = esc(s.get("ip") or "") or "&mdash;"
         if s.get("user"):
             ip = esc(s["user"]) + "@" + ip
@@ -220,7 +220,7 @@ nmc.conf and card state, then restarts this interface.</p>
 <a class="btn sec" href="/config/backup">Download backup</a>
 <input type="file" id="bkfile" accept=".tgz,.tar.gz"
  style="margin-left:12px;font-size:13px">
-<button class="btn" onclick="bkRestore()" style="margin-left:8px">Restore</button>
+<button class="btn dan" onclick="bkRestore()" style="margin-left:8px">Restore</button>
 <div id="bkmsg" class="mut" style="margin-top:8px"></div>
 </div></div>"""
     return """<h1 class="page">UPS Configuration</h1>%s

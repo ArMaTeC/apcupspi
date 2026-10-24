@@ -1795,7 +1795,8 @@ def test_result_str(v):
 def fmt_runtime(d):
     try:
         s = int(float(d.get("battery.runtime", 0)))
-        return "%dhr %dmin %dsec" % (s // 3600, s % 3600 // 60, s % 60)
+        h, m = s // 3600, s % 3600 // 60
+        return ("%dh %dm" % (h, m)) if h else "%dm" % m
     except Exception:
         return "unknown"
 

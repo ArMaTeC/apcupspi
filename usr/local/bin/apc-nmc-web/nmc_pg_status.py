@@ -96,7 +96,7 @@ def pg_home(d):
 <div class="card"><h3>Live Trend</h3><div class="pad">
 <canvas id="hchart" width="960" height="200"
  style="width:100%%;height:auto"></canvas>
-<div class="note" id="hchartlbl" style="margin-top:4px"></div>
+<div class="note" id="hchartlbl" style="margin-top:4px">Collecting first samples&hellip;</div>
 <div class="note">Last 10 minutes, sampled every 5 s.</div>
 </div></div>
 <div class="card"><div class="pad"><table class="kv">
@@ -325,7 +325,7 @@ def pg_status(d, msg: "str | tuple" = ""):
 <div id="stTimers">%s</div><div class="card"><h3>Live Trend</h3><div class="pad">
 <canvas id="stchart" width="960" height="200"
  style="width:100%%;height:auto"></canvas>
-<div class="note" id="stchartlbl" style="margin-top:4px"></div>
+<div class="note" id="stchartlbl" style="margin-top:4px">Collecting first samples&hellip;</div>
 <div class="note">Last 10 minutes, sampled every 5 s.</div>
 </div></div>
 <div id="stEnv">%s</div>

@@ -256,7 +256,8 @@ def pg_about(d, msg: "str | tuple" = ""):
     try:
         with open("/proc/uptime") as f:
             s = float(f.read().split()[0])
-        up = "%d days %02d:%02d" % (s // 86400, s % 86400 // 3600,
+        up = "%d day%s %02d:%02d" % (s // 86400,
+                    "s" if s // 86400 != 1 else "", s % 86400 // 3600,
                                    s % 3600 // 60)
     except Exception:
         pass
@@ -459,7 +460,10 @@ into one download for support requests.</p>
 %s</div></div>
 %s
 <div class="card"><h3>Network Management Card</h3><div class="pad">
-<table class="kv">%s</table></div></div>
+<table class="kv">%s</table>
+<p class="note">Model, serial, AOS and boot-monitor fields are the
+emulated AP9631 identity this card presents to SNMP/clients;
+they are not physical hardware values.</p></div></div>
 <div class="card"><h3>Attached UPS</h3><div class="pad">
 <table class="kv">%s</table></div></div>""" % (
         m, upd, updbtns, updcfg, rows, dev)
