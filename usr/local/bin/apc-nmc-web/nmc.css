@@ -1232,6 +1232,8 @@ select,
  * scripts, full-width tables) span all columns. */
 @media (min-width: 1100px) {
   .content.wide {
+    max-width: 1900px;             /* use ultrawide space; capped pages
+                                      stay at 1440px for readability  */
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(560px, 1fr));
     column-gap: 22px;

@@ -2157,7 +2157,7 @@ SUN = ('<svg width="16" height="16" viewBox="0 0 24 24" fill="none" '
 
 _WIDE_PATHS = frozenset((
     "/about/system", "/about/network", "/about/host", "/about/nut",
-    "/status/ups", "/test/diag", "/home"))
+    "/status/ups", "/test/diag", "/home", "/log/stats"))
 
 
 def page(title, body, d, path="", section="", leaf="",
