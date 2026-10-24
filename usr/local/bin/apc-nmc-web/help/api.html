@@ -8,7 +8,8 @@ monitoring and automation.</p>
  <tr><td><code>GET /datalog.json[?hours=N&amp;off=O&amp;lim=L]</code></td><td>Data-log samples — <code>hours</code> limits the window, <code>off/lim</code> paginate newest-first</td></tr>
  <tr><td><code>GET /events.txt /data.txt</code></td><td>Raw text logs; <code>data.txt?csv=1&amp;hours=N</code> for CSV</td></tr>
  <tr><td><code>GET /api/v1/vars</code></td><td>All NUT variables (Bearer token required)</td></tr>
- <tr><td><code>POST /api/v1/commands</code></td><td>Send a UPS instant command (Bearer token required)</td></tr>
+ <tr><td><code>GET /api/v1/commands</code></td><td>List of instant commands the UPS supports</td></tr>
+ <tr><td><code>GET /api/v1/events</code></td><td>Event-log entries as JSON (ts, sev, text)</td></tr>
  <tr><td><code>GET /metrics</code></td><td>Prometheus-format metrics</td></tr>
 </table>
 <p>The Bearer token is generated on About &rsaquo; Update Settings (admin)
@@ -29,8 +30,12 @@ readings, an optional command register. Full map in
 <h4>MQTT</h4>
 <p>Publishes the UPS state as JSON to <code>&lt;prefix&gt;/state</code>
 every configured interval — for Home Assistant, Node-RED and BMS
-platforms. Configure under Network Services and use the test-publish
-button to verify connectivity.</p>
+platforms. Two companion topics are published alongside:
+<code>&lt;prefix&gt;/status</code> (raw <code>OL</code>/<code>OB</code>/…
+token) and <code>&lt;prefix&gt;/availability</code>
+(<code>online</code>/<code>offline</code>) for simple binary sensors.
+Configure under Network Services and use the test-publish button to
+verify connectivity.</p>
 
 <h4>Syslog / Webhook</h4>
 <p>Events are also pushed to syslog (UDP/TCP/TLS) and as JSON webhook

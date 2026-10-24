@@ -39,6 +39,17 @@ normal LAN.</p>
 <p class="note">Disabling the radio you're connected through cuts
 access — confirm you have an alternative path (Ethernet) first.</p>
 
+<h4>Data Logging</h4>
+<p>Tunes the power-metrics history behind the Data Log chart and energy
+stats: <b>Retention</b> (hours kept, 24–720) and <b>Write Batch</b>
+(samples buffered before each SD write — higher is gentler on the
+card). Samples land once per minute.</p>
+
+<h4>Time &amp; Date</h4>
+<p>Card clock settings — timezone (IANA name, searchable) and NTP sync
+via <code>timedatectl</code>. Affects log timestamps, weekly schedules
+and certificate validity. Requires the System capability.</p>
+
 <h4>Secure Boot</h4>
 <p>Shows secure-boot / boot-integrity status (background in
 <code>docs/secure-boot.md</code>).</p>
