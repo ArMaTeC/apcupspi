@@ -189,8 +189,8 @@ def stats_series(win_h):
     for r in arr:
         ts = r.get("ts", 0)
         for k in KEYS:
-            v = r.get(k)
-            if isinstance(v, (int, float)):
+            v = num(r, k)          # log stores "100.00" strings
+            if v is not None:
                 vs[k].append((ts, v))
     out = {}
     for k, series in vs.items():
