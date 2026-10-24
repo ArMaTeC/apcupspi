@@ -169,6 +169,7 @@ def stats_series(win_h):
     """Per-metric stats + decimated time-series for the Statistics page.
     win_h: hours of history to include (0 = full retained log)."""
     arr = load_data()
+    total = len(arr)
     now = time.time()
     if win_h:
         arr = [r for r in arr if r.get("ts", 0) > now - win_h * 3600]
@@ -185,7 +186,7 @@ def stats_series(win_h):
         out[key] = {"n": len(vs), "min": min(vals), "max": max(vals),
                     "avg": sum(vals) / len(vals), "last": vals[-1],
                     "pts": pts}
-    return {"win": win_h, "series": out}
+    return {"win": win_h, "total": total, "series": out}
 
 
 def pg_stats(d):
@@ -253,7 +254,7 @@ align-items:center;flex-wrap:wrap">
 <button class="btn sec strng" data-h="168">7 days</button>
 <button class="btn sec strng" data-h="0">All</button>
 <span class="note">Trends from the 60&nbsp;s datalog stream —
-%d samples retained.</span></div></div>
+<b id="st_total">%d</b> datapoints retained.</span></div></div>
 <div class="stgrid">%s</div>
 <script>%s</script>""" % (
         opcard, ecard, len(load_data()), charts, _asset("stats.js"))

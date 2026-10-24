@@ -56,6 +56,8 @@
         fetch('/stats.json?win=' + win).then(function (r) {
             return r.json();
         }).then(function (d) {
+            var tot = document.getElementById('st_total');
+            if (tot && d.total !== undefined) tot.textContent = d.total;
             var sv = d.series || {};
             Object.keys(MAP).forEach(function (id) {
                 var s = sv[MAP[id]];
