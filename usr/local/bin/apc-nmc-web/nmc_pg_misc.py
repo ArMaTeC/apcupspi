@@ -279,7 +279,7 @@ def pg_stats(d):
                      ("c_inv", "Input VAC"),
                      ("c_outv", "Output VAC"),
                      ("c_va", "Apparent VA"),
-                     ("c_freq", "Input Hz"),
+                     ("c_freq", "Output Hz"),
                      ("c_temp", "Battery Temp &deg;C")):
         charts += ('<div class="card"><h3>%s</h3><div class="pad">'
                    '<canvas id="%s" width="620" height="200" '

@@ -11,7 +11,7 @@
         c_charge: 'battery.charge', c_load: 'ups.load',
         c_watts: 'ups.realpower', c_inv: 'input.voltage',
         c_outv: 'output.voltage', c_temp: 'battery.temperature',
-        c_va: 'ups.power', c_freq: 'input.frequency'
+        c_va: 'ups.power', c_freq: 'output.frequency'
     };
     var ST = {};                    // id -> {pts,min,max,avg,n,last}
     var DPR = window.devicePixelRatio || 1;
