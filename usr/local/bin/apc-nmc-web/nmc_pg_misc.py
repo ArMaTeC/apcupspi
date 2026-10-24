@@ -204,8 +204,8 @@ def pg_stats(d):
                   int(st.get("ob_max", 0)) % 3600 // 60))
     rows += kv("Last Transfer", esc(st.get("last_transfer", "None")))
     try:
-        _dr = test_result_str(int(st.get("diag_result", 0)))
-    except (ValueError, TypeError):
+        _dr = test_result_str(str(st.get("diag_result", "0")))
+    except (ValueError, TypeError, AttributeError):
         _dr = "never run"
     rows += kv("Last Self-Test", esc(_dr)
                + " &middot; " + esc(st.get("diag_date", "?")))
