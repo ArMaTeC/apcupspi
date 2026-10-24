@@ -2158,7 +2158,7 @@ SUN = ('<svg width="16" height="16" viewBox="0 0 24 24" fill="none" '
 _WIDE_PATHS = frozenset((
     "/about/system", "/about/network", "/about/host", "/about/nut",
     "/status/ups", "/test/diag", "/home", "/log/stats",
-    "/control/ups", "/control/outlets", "/config/ups",
+    "/control/outlets", "/config/ups",
     "/config/system", "/config/users"))
 
 # Pages that want the wider column but a SINGLE column of cards — the
