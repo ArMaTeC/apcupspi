@@ -1,14 +1,16 @@
 # Roadmap PC — Audit (1.1.32)
 
 ## Summary
+
 Static analysis of apc-nmc-web.py + nmc_* parts, helpers, updater, tests.
 No `findUserByUsername`-style ghost calls exist (that error is a template
 example). Post-split namespace verified identical to the monolith;
 42 tests + ruff + py_compile all green.
 
 ## Roadmap
+
 | Task | File | Issue | Fix | Cat | Sev |
-|---|---|---|---|---|---|
+| --- | --- | --- | --- | --- | --- |
 | Driver restart trigger | nut-driver@myups / net-watchdog / update-check | ~40-min SIGTERM+restart cycles → upsd connect noise | Instrument journal for issuing PID; likely a housekeeping unit | Logic | HIGH |
 | Failed LAN logins | ops | Attempts from .215/.221 — verify source | Review nmc.conf users; confirm expected hosts | Security | HIGH |
 | Battery age | ops | 11y battery | Replace hardware | Ops | MEDIUM |

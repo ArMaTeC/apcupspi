@@ -492,7 +492,7 @@ def pg_outlets(d, msg: "str | tuple" = ""):
 <div class="note" style="font-size:12px">%s</div></td>
 <td style="text-align:right;white-space:nowrap">%s</td></tr>""" % (
             esc(g["idx"]), esc(g["id"]), esc(g["name"]),
-            "on" if on else "off", esc(g["status"]), esc(sub), ctrl))
+            "on" if on else "off", "On" if on else "Off", esc(sub), ctrl))
     if not rows:
         rows = ('<tr><td colspan="4" class="note">No outlet groups '
                 'reported by the UPS.</td></tr>')
