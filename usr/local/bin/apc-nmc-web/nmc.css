@@ -1244,3 +1244,17 @@ select,
 /* Inline "?" tooltip badge next to labels */
 .tip{display:inline-block;width:14px;height:14px;line-height:14px;font-size:10px;font-weight:700;text-align:center;border-radius:50%;background:var(--mut);color:var(--surface);cursor:help;vertical-align:2px;margin-inline-start:4px;opacity:.75}
 .tip:hover,.tip:focus{opacity:1}
+
+/* Wide layout: cards flow into a 2-column grid on large screens. Only
+ * used where page() opts in — non-card children (titles, msgboxes,
+ * scripts, full-width tables) span all columns. */
+@media (min-width: 1200px) {
+  .content.wide {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(620px, 1fr));
+    align-items: start;
+  }
+  .content.wide > *:not(.card) {
+    grid-column: 1 / -1;
+  }
+}

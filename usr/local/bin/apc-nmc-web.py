@@ -2101,8 +2101,15 @@ SUN = ('<svg width="16" height="16" viewBox="0 0 24 24" fill="none" '
        'M2 12h2.5M19.5 12H22M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8"/></svg>')
 
 
-def page(title, body, d, path="", section="", leaf=""):
+_WIDE_PATHS = frozenset((
+    "/about/system", "/about/network", "/about/host", "/about/nut",
+    "/status/ups", "/test/diag", "/home"))
+
+
+def page(title, body, d, path="", section="", leaf="",
+         wide=False):
     alabel, acls = alarms(d)
+    wide = wide or path in _WIDE_PATHS
     active = _active_section(path)
     nav = ""
     mnav = ""
@@ -2152,7 +2159,7 @@ def page(title, body, d, path="", section="", leaf=""):
 <div class="shell">
 <nav class="side">%s</nav>
 <details class="mnav"><summary>Menu</summary>%s</details>
-<main><div class="content">%s%s</div>
+<main><div class="content%s">%s%s</div>
 <div class="ftr"><div><a href="/about/system">System</a> &middot;
 <a href="/about/network">Network</a> &middot;
 <a href="/log/event">Event Log</a></div>
@@ -2164,7 +2171,7 @@ def page(title, body, d, path="", section="", leaf=""):
         _asset("theme.js"), esc(title), _asset("nmc.css"),
         esc(d.get("ups.model", "Smart-UPS")),
         acls, esc(alabel), SUN, esc(d.get("__uinfo", WEB_USER)),
-        updbar, nav, mnav, crumb, body,
+        updbar, nav, mnav, " wide" if wide else "", crumb, body,
         esc("v" + installed_version()),
         time.strftime("%m/%d/%Y at %H:%M"),
         _asset("nmc.js"))
