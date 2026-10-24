@@ -497,7 +497,7 @@ Home Assistant, Node-RED and similar consumers.%s</p>
 </form>%s
 <h4 style="margin:22px 0 8px">Data Logging</h4>
 <p class="mut" style="margin-top:0">Power-metrics history driving the
-Data Log chart and the energy stats &mdash; one sample per minute.</p>
+Data Log history and the energy stats &mdash; one sample per minute.</p>
 <form method="post" action="/config/datalog">
 %s<table class="kv">
 <tr><td class="lbl">Retention (hours)<span class="tip" title="Samples older than this are dropped — 24 to 720; larger spans increase chart history but SD writes">?</span></td><td><input name="dl_hours" type="number" min="24" max="720" value="%s"></td></tr>
