@@ -623,8 +623,18 @@ def do_datalog(form):
     how many to batch before flushing to the SD card."""
     def v(name):
         return form.get(name, [""])[0].strip()
-    for key, lo, hi, cfgk in (("dl_hours", 1, 24 * 30, "datalog_hours"),
-                              ("dl_batch", 1, 200, "datalog_batch")):
+    ret = v("dl_ret")
+    if ret:
+        unit = form.get("dl_unit", ["1"])[0]
+        if unit not in ("1", "24", "168", "720"):
+            unit = "1"
+        if not re.fullmatch(r"\d+", ret):
+            return ("msg-err", "dl_ret: must be a whole number")
+        hours = int(ret) * int(unit)
+        if not 1 <= hours <= 8760:
+            return ("msg-err", "retention: must be 1-8760 hours total")
+        cfg_set("datalog_hours", hours)
+    for key, lo, hi, cfgk in (("dl_batch", 1, 200, "datalog_batch"),):
         val = v(key)
         if not val:
             continue

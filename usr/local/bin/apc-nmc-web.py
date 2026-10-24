@@ -2059,7 +2059,8 @@ NAV = [
      [("User Access", "/config/users")]),
     ("Tests", "/test/diag", "tests", [("Diagnostics", "/test/diag")]),
     ("Logs", "/log/event", "logs",
-     [("Event Log", "/log/event"), ("Data Log", "/log/data")]),
+     [("Event Log", "/log/event"), ("Data Log", "/log/data"),
+      ("Statistics", "/log/stats")]),
     ("About", "/about/system", "about",
      [("System", "/about/system"), ("Network", "/about/network"),
       ("Host", "/about/host"), ("UPS Variables", "/about/nut")]),
@@ -2486,6 +2487,14 @@ class H(BaseHTTPRequestHandler):
                 (p == "/config/backup"
                  and not role_post_ok(role, "/config/backup")):
             return self._page(403, pg_403(), {}, p)
+        if p == "/stats.json":
+            q = parse_qs(urlparse(self.path).query)
+            try:
+                win = int(q.get("win", ["24"])[0])
+            except ValueError:
+                win = 24
+            return self._send(200, json.dumps(stats_series(win)),
+                              "application/json")
         if p == "/datalog.json":
             data = load_data()
             q = parse_qs(urlparse(self.path).query)
@@ -2673,6 +2682,9 @@ class H(BaseHTTPRequestHandler):
             elif p == "/log/data":
                 b = pg_data()
                 section, leaf = "Logs", "Data Log"
+            elif p == "/log/stats":
+                b = pg_stats(d)
+                section, leaf = "Logs", "Statistics"
             elif p == "/events.txt":
                 return self._send(200, events_txt(), "text/plain",
                                   {"Content-Disposition":

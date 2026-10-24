@@ -749,7 +749,7 @@ def test_do_datalog_energy(monkeypatch):
                         lambda s, k, v: writes.append((s, k, v)))
     monkeypatch.setattr(web, "log_event", lambda *a, **k: None)
     assert web.do_datalog({"dl_rate": ["0.25"], "dl_cur": ["£"],
-                           "dl_hours": ["48"]}) == \
+                           "dl_ret": ["2"], "dl_unit": ["24"]}) == \
         ("msg-ok", "Data-log settings saved.")
     assert ("device", "energy_rate", "0.25") in writes
     assert ("device", "energy_currency", "£") in writes

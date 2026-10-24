@@ -165,6 +165,100 @@ def pg_data():
 <script>%s</script>""" % (ecard, total, _asset("datalog.js"))
 
 
+def stats_series(win_h):
+    """Per-metric stats + decimated time-series for the Statistics page.
+    win_h: hours of history to include (0 = full retained log)."""
+    arr = load_data()
+    now = time.time()
+    if win_h:
+        arr = [r for r in arr if r.get("ts", 0) > now - win_h * 3600]
+    out = {}
+    for key in ("battery.charge", "ups.load", "ups.realpower",
+                "input.voltage", "output.voltage", "battery.temperature"):
+        vs = [(r["ts"], num(r, key)) for r in arr
+              if num(r, key) is not None]
+        if not vs:
+            continue
+        vals = [v for _, v in vs]
+        stride = max(1, len(vs) // 600)          # <=600 points to chart
+        pts = [[t, v] for t, v in vs[::stride]]
+        out[key] = {"n": len(vs), "min": min(vals), "max": max(vals),
+                    "avg": sum(vals) / len(vals), "last": vals[-1],
+                    "pts": pts}
+    return {"win": win_h, "series": out}
+
+
+def pg_stats(d):
+    """Statistics dashboard: operational counters from state +
+    per-metric trend canvases fed by /stats.json."""
+    st = load_state()
+    es = energy_stats()
+    ob_s = int(st.get("total_ob_seconds", 0))
+    rows = ""
+    rows += kv("Power Transfers", str(int(st.get("ob_count", 0))))
+    rows += kv("Time On Battery", "%dh %dm" % (ob_s // 3600,
+                                               ob_s % 3600 // 60))
+    rows += kv("Longest Outage", "%dh %dm"
+               % (int(st.get("ob_max", 0)) // 3600,
+                  int(st.get("ob_max", 0)) % 3600 // 60))
+    rows += kv("Last Transfer", esc(st.get("last_transfer", "None")))
+    rows += kv("Last Self-Test", esc(str(st.get("diag_result", "?")))
+               + " &middot; " + esc(st.get("diag_date", "?")))
+    bh = battery_health(d)
+    if bh:
+        rows += kv("Battery Health", "%s (%d/100)" % (bh[1], bh[0]))
+    age = battery_age_years()
+    if age is not None:
+        rows += kv("Battery Age", "%.1f years" % age)
+    opcard = ('<div class="card"><h3>Operations</h3><div class="pad">'
+              '<table class="kv">%s</table></div></div>' % rows)
+
+    er = kv("Energy (last 24 h)", "%.3f kWh" % es["kwh24"])
+    if es["avg24"] is not None:
+        er += kv("Average Power (24 h)", "%.0f W" % es["avg24"])
+    er += kv("Energy (log window, %.1f h)" % es["span_h"],
+             "%.3f kWh" % es["kwh_all"])
+    if es["rate"]:
+        er += kv("Est. Cost (24 h)", "%s%.3f"
+                 % (esc(es["cur"]), es["kwh24"] * es["rate"]))
+    evs = load_events()
+    sev = {"crit": 0, "warn": 0, "info": 0}
+    for e in evs:
+        sev[e.get("sev", "info")] = sev.get(e.get("sev", "info"), 0) + 1
+    er += kv("Events Logged",
+             "%d total — %d crit / %d warn / %d info"
+             % (len(evs), sev["crit"], sev["warn"], sev["info"]))
+    ecard = ('<div class="card"><h3>Energy & Events</h3><div class="pad">'
+             '<table class="kv">%s</table></div></div>' % er)
+
+    charts = ""
+    for cid, lbl in (("c_charge", "Battery Charge %"),
+                     ("c_load", "Load %"),
+                     ("c_watts", "Real Power W"),
+                     ("c_inv", "Input VAC"),
+                     ("c_outv", "Output VAC"),
+                     ("c_temp", "Battery Temp &deg;C")):
+        charts += ('<div class="card"><h3>%s</h3><div class="pad">'
+                   '<canvas id="%s" width="620" height="200" '
+                   'style="width:100%%;height:auto"></canvas>'
+                   '<div class="note" id="%s_lbl" style="margin-top:4px">'
+                   'loading&hellip;</div></div></div>'
+                   % (lbl, cid, cid))
+    return """<h1 class="page">Statistics</h1>
+%s%s
+<div class="card"><div class="pad" style="display:flex;gap:8px;
+align-items:center;flex-wrap:wrap">
+<span class="mut">Window:</span>
+<button class="btn sec strng act" data-h="24">24 h</button>
+<button class="btn sec strng" data-h="168">7 days</button>
+<button class="btn sec strng" data-h="0">All</button>
+<span class="note">Trends from the 60&nbsp;s datalog stream —
+%d samples retained.</span></div></div>
+<div class="stgrid">%s</div>
+<script>%s</script>""" % (
+        opcard, ecard, len(load_data()), charts, _asset("stats.js"))
+
+
 def support_bundle():
     """tar.gz bytes of a diagnostics snapshot for support: versions,
     sanitized config/events/state, UPS vars, service + journal output.

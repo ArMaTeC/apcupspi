@@ -459,6 +459,15 @@ def pg_system(d, msg: "str | tuple" = ""):
             ftppw = f.read().strip()
     except OSError:
         pass
+    _h = int(cfg_get("datalog_hours", 25))
+    dl_use = (720 if _h % 720 == 0 else 168 if _h % 168 == 0 else
+              24 if _h % 24 == 0 else 1)
+    dl_ret_disp = _h // dl_use
+    dl_unit_sel = "".join(
+        '<option value="%d"%s>%s</option>' % (
+            mul, " selected" if mul == dl_use else "", lbl)
+        for mul, lbl in ((1, "hours"), (24, "days"),
+                         (168, "weeks"), (720, "months")))
     so, sc = rof("/config/services")
     scard = """<div class="card"><h3>Network Services</h3><div class="pad">%s
 <h4 style="margin:0 0 8px">Modbus TCP (BMS integration)</h4>
@@ -506,7 +515,7 @@ Home Assistant, Node-RED and similar consumers.%s</p>
 Data Log history and the energy stats &mdash; one sample per minute.</p>
 <form method="post" action="/config/datalog">
 %s<table class="kv">
-<tr><td class="lbl">Retention (hours)<span class="tip" title="Samples older than this are dropped — 24 to 720; larger spans increase chart history but SD writes">?</span></td><td><input name="dl_hours" type="number" min="24" max="720" value="%s"></td></tr>
+<tr><td class="lbl">Retention<span class="tip" title="Samples older than this are dropped — pick a value and unit; longer spans increase chart history but SD wear">?</span></td><td><input name="dl_ret" type="number" min="1" max="8760" value="%s" style="width:90px"> <select name="dl_unit">%s</select></td></tr>
 <tr><td class="lbl">Write Batch<span class="tip" title="Samples buffered in RAM before each SD flush — higher means fewer card writes">?</span></td><td><input name="dl_batch" type="number" min="1" max="200" value="%s"></td></tr>
 <tr><td class="lbl">Energy Rate<span class="tip" title="Cost per kWh — enables the Est. Cost rows in the Data Log energy stats; 0 disables">?</span></td><td><input name="dl_rate" type="number" step="0.0001" min="0" max="100" value="%s"></td></tr>
 <tr><td class="lbl">Currency<span class="tip" title="Symbol shown before the estimate, e.g. $ &euro; &pound;">?</span></td><td><input name="dl_cur" maxlength="4" value="%s" placeholder="&euro;"></td></tr>
@@ -542,7 +551,7 @@ Data Log history and the energy stats &mdash; one sample per minute.</p>
         esc(str(mqtt_cfg()["interval"])),
         sc,
         csrf,
-        esc(str(cfg_get("datalog_hours", 25))),
+        esc(str(dl_ret_disp)), dl_unit_sel,
         esc(str(cfg_get("datalog_batch", 15))),
         esc(cfg("device", "energy_rate", "0")),
         esc(cfg("device", "energy_currency", "&euro;")))
