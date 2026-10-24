@@ -165,29 +165,45 @@ def pg_data():
 <script>%s</script>""" % (ecard, total, _asset("datalog.js"))
 
 
+_stats_cache = {"key": None, "val": None}
+
+
 def stats_series(win_h):
     """Per-metric stats + decimated time-series for the Statistics page.
-    win_h: hours of history to include (0 = full retained log)."""
+    win_h: hours of history to include (0 = full retained log).
+    One pass over the log; results cached per (window, data version)
+    so the 60 s re-anchor doesn't rescan 400k+ rows each tick."""
     arr = load_data()
     total = len(arr)
+    last_ts = arr[-1]["ts"] if arr else 0
+    ck = (win_h, total, last_ts)
+    if _stats_cache["key"] == ck:
+        return _stats_cache["val"]
     now = time.time()
     if win_h:
         arr = [r for r in arr if r.get("ts", 0) > now - win_h * 3600]
+    KEYS = ("battery.charge", "ups.load", "ups.realpower",
+            "ups.power", "input.voltage", "output.voltage",
+            "input.frequency", "battery.temperature")
+    vs = {k: [] for k in KEYS}
+    for r in arr:
+        ts = r.get("ts", 0)
+        for k in KEYS:
+            v = r.get(k)
+            if isinstance(v, (int, float)):
+                vs[k].append((ts, v))
     out = {}
-    for key in ("battery.charge", "ups.load", "ups.realpower",
-                "ups.power", "input.voltage", "output.voltage",
-                "input.frequency", "battery.temperature"):
-        vs = [(r["ts"], num(r, key)) for r in arr
-              if num(r, key) is not None]
-        if not vs:
+    for k, series in vs.items():
+        if not series:
             continue
-        vals = [v for _, v in vs]
-        stride = max(1, len(vs) // 600)          # <=600 points to chart
-        pts = [[t, v] for t, v in vs[::stride]]
-        out[key] = {"n": len(vs), "min": min(vals), "max": max(vals),
-                    "avg": sum(vals) / len(vals), "last": vals[-1],
-                    "pts": pts}
-    return {"win": win_h, "total": total, "series": out}
+        vals = [v for _, v in series]
+        stride = max(1, len(series) // 600)      # <=600 points to chart
+        out[k] = {"n": len(series), "min": min(vals),
+                  "max": max(vals), "avg": sum(vals) / len(vals),
+                  "last": vals[-1], "pts": series[::stride]}
+    res = {"win": win_h, "total": total, "series": out}
+    _stats_cache["key"], _stats_cache["val"] = ck, res
+    return res
 
 
 def pg_stats(d):
@@ -215,7 +231,7 @@ def pg_stats(d):
         rows += kv("Battery Health", "%s (%d/100)" % (bh[1], bh[0]))
     age = battery_age_years()
     if age is not None:
-        rows += kv("Battery Age", "%.1f years" % age)
+        rows += kv("Battery Age", fmt_battery_age())
     opcard = ('<div class="card"><h3>Operations</h3><div class="pad">'
               '<table class="kv">%s</table></div></div>' % rows)
 
@@ -873,9 +889,16 @@ def events_txt():
     return "\n".join(lines) + "\n"
 
 
+_energy_cache = {"key": None, "val": None}
+
+
 def energy_stats():
-    """Integrate ups.realpower samples (trapezoid) into kWh figures."""
+    """Integrate ups.realpower samples (trapezoid) into kWh figures.
+    Cached per data version — pg_data and pg_stats both call it."""
     arr = load_data()
+    ck = (len(arr), arr[-1]["ts"] if arr else 0)
+    if _energy_cache["key"] == ck:
+        return _energy_cache["val"]
     now = time.time()
 
     def kwh(rows):
@@ -899,7 +922,7 @@ def energy_stats():
         rate = float(cfg("device", "energy_rate", "0") or 0)
     except ValueError:
         rate = 0
-    return {"kwh24": kwh(r24), "kwh_all": kwh(arr),
+    res = {"kwh24": kwh(r24), "kwh_all": kwh(arr),
             "avg24": sum(w24) / len(w24) if w24 else None,
             "span_h": ((arr[-1]["ts"] - arr[0]["ts"]) / 3600.0
                        if len(arr) > 1 else 0),
@@ -907,6 +930,8 @@ def energy_stats():
             "cur": str(cfg("device", "energy_currency", "$"))[:4],
             "vin": s("input.voltage"), "load": s("ups.load"),
             "watts": s("ups.realpower")}
+    _energy_cache["key"], _energy_cache["val"] = ck, res
+    return res
 
 
 def data_txt(hours=None, csv=False):

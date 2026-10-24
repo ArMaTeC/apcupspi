@@ -1871,6 +1871,18 @@ def battery_health(d):
     return score, label
 
 
+def fmt_battery_age():
+    """Human battery age: 'new' / 'N months' / 'X.Y years'."""
+    a = battery_age_years()
+    if a is None:
+        return "unknown"
+    if a < 0.15:
+        return "new"
+    if a < 1:
+        return "%d months" % max(1, round(a * 12))
+    return "%.1f years" % a
+
+
 def card_health():
     """Pi-side vitals for status.json / support: uptime, load, SoC temp."""
     out = {}
