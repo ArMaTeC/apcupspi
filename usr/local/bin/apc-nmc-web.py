@@ -229,6 +229,10 @@ def ups_rw():
 def ups_cmd(cmd):
     with _nut_lock:
         r = nut.instcmd(UPSNAME, cmd)
+    if not str(r).startswith(("OK", "PENDING")):  # transient hiccup?
+        time.sleep(0.4)
+        with _nut_lock:
+            r = nut.instcmd(UPSNAME, cmd)         # one retry
     if cmd in ("beeper.mute", "beeper.enable", "beeper.disable") \
             and r.startswith(("OK", "PENDING")):
         save_state({"beeper_muted": cmd == "beeper.mute"})
