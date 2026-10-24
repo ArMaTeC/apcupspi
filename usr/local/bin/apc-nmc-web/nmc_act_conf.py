@@ -624,5 +624,13 @@ def do_datalog(form):
         if not re.fullmatch(r"\d+", val) or not lo <= int(val) <= hi:
             return ("msg-err", "%s: must be %d-%d" % (key, lo, hi))
         cfg_set(cfgk, int(val))
+    rate = v("dl_rate")
+    if rate:
+        if not re.fullmatch(r"\d+(\.\d+)?", rate) or float(rate) > 100:
+            return ("msg-err", "dl_rate: must be a number 0-100")
+        conf_set("device", "energy_rate", rate)
+    cur = v("dl_cur")
+    if cur:
+        conf_set("device", "energy_currency", cur[:4])
     log_event("NMC: Data-log settings changed via the management card.")
     return ("msg-ok", "Data-log settings saved.")

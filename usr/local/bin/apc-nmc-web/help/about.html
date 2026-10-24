@@ -15,8 +15,9 @@ centre.</p>
  <li><b>Check for Updates:</b> queries the GitHub repository for the
   newest release; if one exists a yellow banner appears on every page.</li>
  <li><b>Apply Update:</b> downloads the payload, verifies sha256, deploys
-  files, rebuilds the UPS driver and restarts services — progress streams
-  into the live console on the page.</li>
+  files, rebuilds the UPS driver (skipped when its sources haven't
+  changed since the last build) and restarts services — progress
+  streams into the live console on the page.</li>
  <li><b>Rollback:</b> restores the per-file backup taken before the last
   update.</li>
  <li><b>Releases:</b> the link beside &quot;Latest Version&quot; opens the

@@ -502,6 +502,8 @@ Data Log history and the energy stats &mdash; one sample per minute.</p>
 %s<table class="kv">
 <tr><td class="lbl">Retention (hours)<span class="tip" title="Samples older than this are dropped — 24 to 720; larger spans increase chart history but SD writes">?</span></td><td><input name="dl_hours" type="number" min="24" max="720" value="%s"></td></tr>
 <tr><td class="lbl">Write Batch<span class="tip" title="Samples buffered in RAM before each SD flush — higher means fewer card writes">?</span></td><td><input name="dl_batch" type="number" min="1" max="200" value="%s"></td></tr>
+<tr><td class="lbl">Energy Rate<span class="tip" title="Cost per kWh — enables the Est. Cost rows in the Data Log energy stats; 0 disables">?</span></td><td><input name="dl_rate" type="number" step="0.0001" min="0" max="100" value="%s"></td></tr>
+<tr><td class="lbl">Currency<span class="tip" title="Symbol shown before the estimate, e.g. $ &euro; &pound;">?</span></td><td><input name="dl_cur" maxlength="4" value="%s" placeholder="&euro;"></td></tr>
 </table><div style="margin-top:12px"><button class="btn">Apply</button></div>
 </form></div></div>""" % (
         so,
@@ -535,7 +537,9 @@ Data Log history and the energy stats &mdash; one sample per minute.</p>
         sc,
         csrf,
         esc(str(cfg_get("datalog_hours", 25))),
-        esc(str(cfg_get("datalog_batch", 15))))
+        esc(str(cfg_get("datalog_batch", 15))),
+        esc(cfg("device", "energy_rate", "0")),
+        esc(cfg("device", "energy_currency", "&euro;")))
 
     # ---- firewall -------------------------------------------------------
     fw_en, fw_act = svc_state("apc-nmc-firewall.service")
