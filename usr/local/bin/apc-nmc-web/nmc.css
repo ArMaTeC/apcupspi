@@ -1272,7 +1272,7 @@ select,
 .helptoc nav a:hover{background:var(--surface2);color:var(--fg)}
 .helptoc nav a.here{border-inline-start-color:var(--apc,#3dcd58);
   color:var(--fg);font-weight:600;background:var(--surface2)}
-.helpbody{flex:1;min-width:0;max-width:78ch;padding:20px 30px 26px;
+.helpbody{flex:1;min-width:0;max-width:110ch;padding:20px 30px 26px;
   font-size:14.5px;line-height:1.75}
 .helpbody h2{margin:0 0 14px;font-size:21px}
 .helpbody h3{margin:20px 0 8px;font-size:16px}

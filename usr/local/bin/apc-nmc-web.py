@@ -2175,13 +2175,14 @@ _WIDE_PATHS = frozenset((
 
 # Pages that want the wider column but a SINGLE column of cards — the
 # card grid would leave big tables half-width.
-_FLAT_PATHS = frozenset(("/log/event", "/log/data"))
+_FLAT_PATHS = frozenset(("/log/event", "/log/data", "/help"))
 
 
 def page(title, body, d, path="", section="", leaf="",
          wide=False):
     alabel, acls = alarms(d)
-    wide = wide or path in _WIDE_PATHS or path in _FLAT_PATHS
+    wide = (wide or path in _WIDE_PATHS or path in _FLAT_PATHS
+            or path.startswith("/help/"))
     active = _active_section(path)
     nav = ""
     mnav = ""
@@ -2244,8 +2245,9 @@ def page(title, body, d, path="", section="", leaf="",
         esc(d.get("ups.model", "Smart-UPS")),
         acls, esc(alabel), SUN, esc(d.get("__uinfo", WEB_USER)),
         updbar, nav, mnav,
-        (" wide" if wide else "") + (" flat" if path in _FLAT_PATHS
-                                     else ""),
+        (" wide" if wide else "") +
+        (" flat" if (path in _FLAT_PATHS or path.startswith("/help/"))
+         else ""),
         crumb, body,
         esc("v" + installed_version()),
         time.strftime("%m/%d/%Y at %H:%M"),
