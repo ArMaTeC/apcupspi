@@ -365,7 +365,7 @@ run. Every signed-in user can view all pages and change their own
 password &mdash; the matrix controls the write actions.<span class="tip" title="Hover a column header to see the exact paths it unlocks">?</span></p>
 <form method="post" action="/config/roles"><table class="ev">
 %s
-<tr><th style="text-align:left">Role</th>%s</tr>
+<tr><th style="text-align:left;width:110px">Role</th>%s</tr>
 %s</table>
 %s</form></div></div>""" % (csrf, chead, mrows, mbtns)
 
