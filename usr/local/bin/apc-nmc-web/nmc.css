@@ -1243,6 +1243,9 @@ select,
   .content.wide > *:not(.card) {
     grid-column: 1 / -1;
   }
+  .content.wide.flat {              /* wider column, cards stack */
+    grid-template-columns: 1fr;
+  }
 }
 
 /* ---- Help redesign: sticky filterable TOC + readable body column ---- */
