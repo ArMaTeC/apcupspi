@@ -394,7 +394,7 @@ PYEOF
     fi
     # shipped fallback binaries are aarch64-only — a rebuild is the only
     # correct source on other architectures
-    if [ -z "$DRV_NEW" ]; then
+    if [ -z "$DRV_NEW" ] && [ "$BUILD_SKIP" != 1 ]; then
         if [ "$(uname -m)" = "aarch64" ]; then
             DRV_NEW="${SRC}usr/lib/nut/apc_modbus"
         else
