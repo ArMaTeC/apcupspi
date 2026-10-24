@@ -237,7 +237,12 @@ def ups_cmd(cmd):
 
 def ups_setvar(var, val):
     with _nut_lock:
-        return nut.set_var(UPSNAME, var, val)
+        r = nut.set_var(UPSNAME, var, val)
+    if not str(r).startswith("OK"):          # transient modbus hiccup?
+        time.sleep(0.4)
+        with _nut_lock:
+            r = nut.set_var(UPSNAME, var, val)  # one retry
+    return r
 
 
 # ============================================================ shared state
@@ -660,7 +665,7 @@ ROLE_CAPS = {
     "system":   ("System & Updates",
                  ("/config/sessions", "/config/backup", "/config/restore",
                   "/config/support", "/log/clear", "/about/update/",
-                  "/about/sysact", "/config/time", "/config/wifi/hw")),
+                  "/about/sysact", "/config/time")),
 }
 ROLE_CAP_DEFAULTS = {
     "device": ("ups", "control"),
