@@ -718,3 +718,85 @@ def test_help_pages():
     # kv() tooltips appear for known labels only
     assert 'class="tip"' in web.kv('Battery Charge', 'x')
     assert 'class="tip"' not in web.kv('Some Other Label', 'x')
+
+
+def test_ups_cmd_retry():
+    w = _load(WEB, "web2")          # fresh module — no cross-test stubs
+    calls = {"instcmd": 0, "set_var": 0}
+    class N:
+        def instcmd(self, u, c):
+            calls["instcmd"] += 1
+            return "ERR TRYAGAIN" if calls["instcmd"] == 1 else "OK"
+        def set_var(self, u, v, x):
+            calls["set_var"] += 1
+            return "ERR LOST" if calls["set_var"] == 1 else "OK"
+    w.nut = N()
+    w.save_state = lambda *a, **k: None
+    # transient instcmd/setvar failures get one automatic retry
+    assert w.ups_cmd("beeper.mute") == "OK"
+    assert calls["instcmd"] == 2
+    assert w.ups_setvar("ups.test", "1") == "OK"
+    assert calls["set_var"] == 2
+
+
+def test_do_datalog_energy(monkeypatch):
+    # energy rate/currency save through conf_set into [device]
+    writes = []
+    st = {"cfg": {}}
+    monkeypatch.setattr(web, "load_state", lambda: st)
+    monkeypatch.setattr(web, "cfg_set", lambda k, v: st["cfg"].__setitem__(k, v))
+    monkeypatch.setattr(web, "conf_set",
+                        lambda s, k, v: writes.append((s, k, v)))
+    monkeypatch.setattr(web, "log_event", lambda *a, **k: None)
+    assert web.do_datalog({"dl_rate": ["0.25"], "dl_cur": ["£"],
+                           "dl_hours": ["48"]}) == \
+        ("msg-ok", "Data-log settings saved.")
+    assert ("device", "energy_rate", "0.25") in writes
+    assert ("device", "energy_currency", "£") in writes
+    assert st["cfg"]["datalog_hours"] == 48
+    # bad rate rejected
+    cls, _ = web.do_datalog({"dl_rate": ["abc"]})
+    assert cls == "msg-err"
+
+
+def test_trap_channel_config(monkeypatch):
+    assert "trap" in web.NOTIFY_CHANNELS
+    st = {"cfg": {"notify_trap_dest": "mgr.local",
+                  "notify_trap_comm": "secret"}}
+    monkeypatch.setattr(web, "load_state", lambda: st)
+    n = web.notify_cfg()
+    assert n["trap_dest"] == "mgr.local" and n["trap_comm"] == "secret"
+    # do_notify_test('trap') fires _send_trap with the configured values
+    sent = []
+    monkeypatch.setattr(web, "_send_trap",
+                        lambda d, c, t, s: sent.append((d, c)))
+    monkeypatch.setattr(web, "log_event", lambda *a, **k: None)
+    cls, _ = web.do_notify_test("trap")
+    assert cls == "msg-ok" and sent == [("mgr.local", "secret")]
+
+
+def test_runtime_and_outlet_fmt(monkeypatch):
+    # runtime shows '2h 15m' style everywhere
+    assert "2h 15m" in web.fmt_runtime({"battery.runtime": "8100"})
+    monkeypatch.setattr(web, "ups_cmds", dict)
+    h = web.pg_outlets({"__role": "admin", "__csrf": "X", "__uinfo": "",
+                        "ups.status": "OL",
+                        "outlet.group.count": "1",
+                        "outlet.group.0.id": "MOG",
+                        "outlet.group.0.name": "UPS Outlets",
+                        "outlet.group.0.status": "on"})
+    assert 'class="gstat">On<' in h
+
+
+def test_battery_date_format(monkeypatch):
+    # ISO battery.date renders MM/DD/YYYY to match the event log
+    monkeypatch.setattr(web, "ups_cmds", dict)
+    monkeypatch.setattr(web, "ups_vars", lambda: {
+        "battery.date": "2026-10-22",
+        "battery.date.maintenance": "2031-04-22",
+        "ups.status": "OL"})
+    frags = web._status_frags({"ups.status": "OL",
+                               "battery.date": "2026-10-22",
+                               "battery.date.maintenance": "2031-04-22"})
+    assert "10/22/2026" in frags["stTop"]
+    assert "04/22/2031" in frags["stTop"]

@@ -21,7 +21,8 @@ setInterval(function () {
             if (st === undefined) return;
             var on = (st === 'on');
             tr.querySelector('.dot').className = 'dot ' + (on ? 'on' : 'off');
-            tr.querySelector('.gstat').textContent = st;
+            tr.querySelector('.gstat').textContent =
+                (st === 'on') ? 'On' : (st === 'off') ? 'Off' : st;
             tr.querySelector('.swin').checked = on;
             tr.querySelector('.swact').value = on ? 'off' : 'on';
             tr.querySelector('.gsw').textContent = on ? 'On' : 'Off';

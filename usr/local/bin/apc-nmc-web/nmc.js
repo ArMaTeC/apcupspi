@@ -115,9 +115,26 @@ function nmcTable(tbl) {
     // unchecked.
     var sevboxes = tbl.hasAttribute('data-pg-sev')
         ? [].slice.call(document.querySelectorAll('.evf')) : [];
-    sevboxes.forEach(function (c) {
-        c.addEventListener('change', function () { pg = 0; apply(); });
-    });
+    if (sevboxes.length) {
+        // persisted like the auto-refresh toggle — restore before the
+        // initial apply() so a reload keeps the same severity filter
+        var saved = {};
+        try {
+            saved = JSON.parse(localStorage.getItem('nmc-evsev') || '{}');
+        } catch (e) { /* corrupt entry — fall back to all-checked */ }
+        sevboxes.forEach(function (c) {
+            if (c.value in saved) c.checked = saved[c.value];
+        });
+        var persist = function () {
+            var m = {};
+            sevboxes.forEach(function (c) { m[c.value] = c.checked; });
+            localStorage.setItem('nmc-evsev', JSON.stringify(m));
+        };
+        sevboxes.forEach(function (c) {
+            c.addEventListener('change',
+                             function () { pg = 0; apply(); persist(); });
+        });
+    }
 
     // Recompute visibility + current page, then show/hide rows.
     function apply() {
