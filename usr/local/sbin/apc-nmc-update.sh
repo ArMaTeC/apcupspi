@@ -337,7 +337,24 @@ PYEOF
     DRIVER_CHG=0
     DRV_NEW=""
     LIBMB_BUILT=0
-    if ls "${SRC}"vendor/nut-2.8.5-src.tar.gz \
+    # Skip the source rebuild when the vendored inputs are byte-identical
+    # to the last successful build AND the driver is already installed —
+    # a rebuild would produce the same binary anyway. A missing driver
+    # always forces the build.
+    BUILD_STAMP=/etc/apc-nmc/.nut-build.stamp
+    BUILD_SKIP=0
+    BUILT_OK=0
+    INPUTS=$(sha256sum "${SRC}"vendor/nut-2.8.5-src.tar.gz \
+        "${SRC}"vendor/libmodbus-*.tar.gz \
+        "${SRC}"vendor/patches/* 2>/dev/null | sha256sum | cut -d' ' -f1)
+    if [ -s /usr/lib/nut/apc_modbus ] \
+            && [ "$(cat "$BUILD_STAMP" 2>/dev/null)" = "$INPUTS" ] \
+            && [ -n "$INPUTS" ]; then
+        BUILD_SKIP=1
+        say "  NUT driver sources unchanged — skipping rebuild"
+    fi
+    if [ "$BUILD_SKIP" != 1 ] \
+            && ls "${SRC}"vendor/nut-2.8.5-src.tar.gz \
             "${SRC}"vendor/libmodbus-*.tar.gz >/dev/null 2>&1 \
             && command -v gcc >/dev/null && command -v make >/dev/null; then
         status running "building NUT driver"
@@ -367,6 +384,7 @@ PYEOF
                         --without-asciidoc --without-pkg-config >>"$LOG" 2>&1 \
                     && make -j"$J" >>"$LOG" 2>&1); then
                 DRV_NEW="$work/nut-2.8.5/drivers/apc_modbus"
+                BUILT_OK=1
                 say "  rebuilt apc_modbus from source"
             else
                 say "WARN: NUT build failed — falling back to shipped binary"
@@ -393,6 +411,7 @@ PYEOF
                     /usr/lib/nut/apc_modbus
             DRIVER_CHG=1; say "  updated /usr/lib/nut/apc_modbus"
         fi
+        [ "$BUILT_OK" = 1 ] && printf '%s' "$INPUTS" > "$BUILD_STAMP"
     fi
     # shipped libmodbus is only the fallback — a source build already
     # installed the fresh library above. cp -a keeps .so symlinks as
